@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1a237e">
+    <title>فرص عمل | عقارات | أخبار</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="فرص عمل">
+    
+    <style>
+        :root {
+            --white: #ffffff;
+            --black: #000000;
+            --navy: #1a237e;
+            --yellow: #ffc107;
+            --gray-light: #f5f5f5;
+            --gray: #9e9e9e;
+            --danger: #f44336;
+            --success: #4caf50;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--white);
+            color: var(--black);
+            direction: rtl;
+            min-height: 100vh;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* شاشة التحميل */
+        .loading-screen {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: var(--navy);
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .loading-screen .spinner {
+            width: 60px;
+            height: 60px;
+            border: 5px solid rgba(255,255,255,0.3);
+            border-top: 5px solid var(--yellow);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .loading-screen p { color: white; font-size: 18px; }
+
+        /* شاشة تسجيل الدخول */
+        .login-screen {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, var(--navy), #283593);
+            padding: 20px;
+        }
+
+        .login-card {
+            background: var(--white);
+            border-radius: 16px;
+            padding: 40px 30px;
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+
+        .login-card h1 { color: var(--navy); margin-bottom: 10px; font-size: 28px; }
+        .login-card p { color: var(--gray); margin-bottom: 30px; }
+
+        .google-btn {
+            background: var(--white);
+            color: var(--black);
+            border: 2px solid #ddd;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.3s;
+        }
+
+        .google-btn:hover { background: #f5f5f5; border-color: var(--navy); }
+        .google-btn:disabled { opacity: 0.6; }
+
+        /* التطبيق الرئيسي */
+        .main-app {
+            display: none;
+            flex-direction: column;
+            min-height: 100vh;
+            padding-bottom: 80px;
+        }
+
+        .app-header {
+            background: var(--navy);
+            color: var(--white);
+            padding: 15px 20px;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .app-header h2 { margin: 0; font-size: 20px; }
+
+        .quick-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+
+        .quick-btn {
+            background: var(--yellow);
+            color: var(--black);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .quick-btn:hover { background: #ffca28; }
+        .quick-btn:active { transform: scale(0.95); }
+
+        /* الأقسام */
+        .section { display: none; padding: 20px; }
+        .section.active { display: block; }
+
+        /* بطاقة منشور */
+        .post-card {
+            background: var(--white);
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .post-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .post-header h3 { color: var(--navy); font-size: 18px; }
+
+        .pinned-badge {
+            background: var(--yellow);
+            color: var(--black);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .post-description { color: var(--black); line-height: 1.6; margin: 10px 0; white-space: pre-wrap; }
+        .post-price { color: var(--navy); font-weight: bold; font-size: 18px; margin: 8px 0; }
+        .post-location, .post-area, .post-source { color: var(--gray); margin: 4px 0; font-size: 14px; }
+
+        .post-media img {
+            width: 100%;
+            max-height: 300px;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+
+        .post-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #eee;
+        }
+
+        .contact-btn {
+            background: var(--yellow);
+            color: var(--black);
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 14px;
+            display: inline-block;
+        }
+
+        .post-date { color: var(--gray); font-size: 12px; }
+
+        /* الملف الشخصي */
+        .profile-section { padding: 20px; }
+
+        .profile-info {
+            background: var(--white);
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .profile-code {
+            background: var(--navy);
+            color: var(--white);
+            padding: 8px 16px;
+            border-radius: 8px;
+            display: inline-block;
+            margin: 10px 0;
+            font-size: 18px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            cursor: pointer;
+            user-select: all;
+        }
+
+        .balance-display {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--navy);
+            margin: 15px 0;
+        }
+
+        .profile-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .action-btn {
+            background: var(--navy);
+            color: var(--white);
+            border: none;
+            padding: 14px 20px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+
+        .action-btn:hover { background: var(--yellow); color: var(--black); }
+        .action-btn:active { transform: scale(0.98); }
+        .action-btn.charge-btn { background: var(--success); }
+        .action-btn.charge-btn:hover { background: #43a047; color: white; }
+
+        /* النوافذ المنبثقة */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            padding: 20px;
+        }
+
+        .modal-content {
+            background: var(--white);
+            border-radius: 16px;
+            padding: 30px;
+            max-width: 500px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-content h2 { color: var(--navy); margin-bottom: 20px; text-align: center; }
+
+        .modal-content input,
+        .modal-content select,
+        .modal-content textarea {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: inherit;
+        }
+
+        .modal-content textarea { resize: vertical; min-height: 80px; }
+        .modal-content input[type="file"] { padding: 8px; }
+        .modal-content label { font-weight: bold; display: block; margin-bottom: 5px; color: var(--navy); }
+
+        .form-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .btn-primary {
+            background: var(--navy);
+            color: var(--white);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            flex: 1;
+            font-size: 16px;
+        }
+
+        .btn-primary:hover { background: var(--yellow); color: var(--black); }
+        .btn-primary:disabled { opacity: 0.6; }
+
+        .btn-secondary {
+            background: #e0e0e0;
+            color: var(--black);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            flex: 1;
+            font-size: 16px;
+        }
+
+        .cost-info {
+            background: #fff3e0;
+            color: var(--navy);
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        /* شريط التنقل السفلي */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: var(--white);
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-around;
+            padding: 10px 0;
+            z-index: 1000;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+        }
+
+        .nav-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            background: none;
+            border: none;
+            color: var(--gray);
+            font-size: 12px;
+            cursor: pointer;
+            padding: 8px 12px;
+            font-family: inherit;
+            border-radius: 12px;
+            position: relative;
+            transition: all 0.3s;
+        }
+
+        .nav-btn .nav-icon { font-size: 22px; }
+        .nav-btn.active { color: var(--navy); background: #fff8e1; }
+        .nav-btn.active .nav-icon { color: var(--yellow); }
+        .nav-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            width: 30px;
+            height: 3px;
+            background: var(--yellow);
+            border-radius: 3px;
+        }
+        .nav-btn:active { transform: scale(0.95); }
+
+        /* التحميل */
+        .loader { display: none; text-align: center; padding: 20px; }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid var(--navy);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .load-more-btn {
+            background: var(--navy);
+            color: var(--white);
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-weight: bold;
+            cursor: pointer;
+            display: block;
+            margin: 20px auto;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+
+        .load-more-btn:hover { background: var(--yellow); color: var(--black); }
+        .load-more-btn:active { transform: scale(0.95); }
+
+        /* رسائل */
+        .toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            border-radius: 8px;
+            z-index: 9999;
+            font-weight: bold;
+            animation: fadeIn 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+
+        .toast-error { background: #f44336; color: white; }
+        .toast-success { background: #4caf50; color: white; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; top: 0; }
+            to { opacity: 1; top: 20px; }
+        }
+
+        @media (max-width: 600px) {
+            .post-card { padding: 12px; }
+            .modal-content { padding: 20px; margin: 10px; }
+            .nav-btn { font-size: 10px; }
+            .nav-btn .nav-icon { font-size: 20px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- شاشة التحميل -->
+    <div id="loadingScreen" class="loading-screen">
+        <div class="spinner"></div>
+        <p>جاري التحميل...</p>
+    </div>
+
+    <!-- شاشة تسجيل الدخول -->
+    <div id="loginScreen" class="login-screen" style="display:none;">
+        <div class="login-card">
+            <h1>🎯 فرص عمل</h1>
+            <p>منصة متكاملة للوظائف والعقارات والأخبار</p>
+            <button id="googleLoginBtn" class="google-btn">تسجيل الدخول بحساب Google</button>
+            <div id="loginError" style="color:red;margin-top:15px;display:none;"></div>
+        </div>
+    </div>
+
+    <!-- التطبيق الرئيسي -->
+    <div id="mainApp" class="main-app">
+        <header class="app-header">
+            <h2>🚀 فرص عمل</h2>
+            <div class="quick-buttons">
+                <button id="quickPublishJob" class="quick-btn">📢 انشر فرصة عمل</button>
+                <button id="quickPublishNews" class="quick-btn">📰 انشر خبر</button>
+            </div>
+        </header>
+
+        <section id="jobsSection" class="section active">
+            <div id="jobsContainer"></div>
+            <div class="loader" id="loaderJobs"><div class="spinner"></div></div>
+            <button id="loadMoreBtnJobs" class="load-more-btn" style="display:none;">تحميل المزيد</button>
+        </section>
+
+        <section id="realEstateSection" class="section">
+            <div id="realestateContainer"></div>
+            <div class="loader" id="loaderRealestate"><div class="spinner"></div></div>
+            <button id="loadMoreBtnRealestate" class="load-more-btn" style="display:none;">تحميل المزيد</button>
+        </section>
+
+        <section id="newsSection" class="section">
+            <div id="newsContainer"></div>
+            <div class="loader" id="loaderNews"><div class="spinner"></div></div>
+            <button id="loadMoreBtnNews" class="load-more-btn" style="display:none;">تحميل المزيد</button>
+        </section>
+
+        <section id="profileSection" class="section profile-section">
+            <div class="profile-info">
+                <h3>مرحباً، <span id="profileName">---</span></h3>
+                <p>كود المحفظة:</p>
+                <div class="profile-code" id="profileCode">------</div>
+                <p style="font-size:12px;color:#999;">اضغط للنسخ</p>
+                <div class="balance-display">💰 الرصيد: <span id="profileBalance">0</span> رصيد</div>
+            </div>
+            <div class="profile-actions">
+                <button id="chargeBalanceBtn" class="action-btn charge-btn">💳 شحن رصيد</button>
+                <button id="publishAdBtn" class="action-btn">📊 نشر إعلان ممول</button>
+                <button id="publishRealEstateBtn" class="action-btn">🏠 نشر عقار</button>
+                <button id="installAppBtn" class="action-btn" style="background:#4caf50;">📱 تثبيت التطبيق</button>
+                <button id="logoutBtn" class="action-btn" style="background:#f44336;">🚪 تسجيل الخروج</button>
+            </div>
+        </section>
+
+        <nav class="bottom-nav">
+            <button class="nav-btn active" data-section="jobs">
+                <span class="nav-icon">💼</span><span>فرص عمل</span>
+            </button>
+            <button class="nav-btn" data-section="realestate">
+                <span class="nav-icon">🏠</span><span>عقارات</span>
+            </button>
+            <button class="nav-btn" data-section="news">
+                <span class="nav-icon">📰</span><span>أخبار</span>
+            </button>
+            <button class="nav-btn" data-section="profile">
+                <span class="nav-icon">👤</span><span>الملف الشخصي</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore-compat.js"></script>
+
+    <script>
+    // ==========================================
+    // تهيئة Firebase
+    // ==========================================
+    firebase.initializeApp({
+        apiKey: "AIzaSyDk120B6zrzE1CRB4NZth6_Y-fMUXF3Np4",
+        authDomain: "farsaml.firebaseapp.com",
+        projectId: "farsaml",
+        storageBucket: "farsaml.firebasestorage.app",
+        messagingSenderId: "100868423567",
+        appId: "1:100868423567:web:939c392225dee0d2db95fa"
+    });
+
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    const CONFIG = {
+        adminWhatsApp: "963939286382",
+        postsPerPage: 10,
+        dailyAdCost: 10,
+        realEstatePostCost: 5
+    };
+
+    let currentUser = null;
+    let userData = null;
+    let currentSection = 'jobs';
+    let loadStates = {
+        jobs: { lastDoc: null, hasMore: true, loading: false },
+        realestate: { lastDoc: null, hasMore: true, loading: false },
+        news: { lastDoc: null, hasMore: true, loading: false }
+    };
+
+    // ==========================================
+    // دالة الرسائل
+    // ==========================================
+    function showToast(message, type) {
+        const toast = document.createElement('div');
+        toast.className = 'toast ' + (type === 'success' ? 'toast-success' : 'toast-error');
+        toast.textContent = (type === 'success' ? '✅ ' : '❌ ') + message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
+
+    // ==========================================
+    // المصادقة
+    // ==========================================
+    auth.onAuthStateChanged(async (user) => {
+        if (user) {
+            currentUser = user;
+            document.getElementById('loadingScreen').style.display = 'none';
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('mainApp').style.display = 'flex';
+            
+            try {
+                const userRef = db.collection('users').doc(user.uid);
+                const snap = await userRef.get();
+                
+                if (!snap.exists) {
+                    const code = 'FA-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+                    await userRef.set({
+                        uid: user.uid,
+                        email: user.email,
+                        name: user.displayName,
+                        userCode: code,
+                        walletCode: code,
+                        balance: 0,
+                        createdAt: new Date().toISOString(),
+                        isFrozen: false,
+                        lastLogin: new Date().toISOString()
+                    });
+                } else {
+                    await userRef.update({ lastLogin: new Date().toISOString() }).catch(() => {});
+                }
+
+                const data = (await userRef.get()).data();
+                userData = data;
+                
+                document.getElementById('profileName').textContent = data.name || '';
+                document.getElementById('profileCode').textContent = data.walletCode || data.userCode || '------';
+                document.getElementById('profileBalance').textContent = data.balance || 0;
+                
+                loadPosts('jobs');
+            } catch (e) {
+                console.error('خطأ:', e);
+            }
+        } else {
+            document.getElementById('loadingScreen').style.display = 'none';
+            document.getElementById('loginScreen').style.display = 'flex';
+            document.getElementById('mainApp').style.display = 'none';
+        }
+    });
+
+    // ==========================================
+    // ربط جميع الأزرار - onclick مباشر
+    // ==========================================
+
+    // تسجيل الدخول
+    document.getElementById('googleLoginBtn').onclick = async function() {
+        this.disabled = true;
+        this.textContent = '⏳ جاري الاتصال...';
+        try {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            provider.setCustomParameters({ prompt: 'select_account' });
+            await auth.signInWithPopup(provider);
+        } catch (e) {
+            document.getElementById('loginError').textContent = '❌ خطأ في تسجيل الدخول، حاول مرة أخرى';
+            document.getElementById('loginError').style.display = 'block';
+            this.disabled = false;
+            this.textContent = 'تسجيل الدخول بحساب Google';
+        }
+    };
+
+    // تسجيل الخروج
+    document.getElementById('logoutBtn').onclick = function() {
+        auth.signOut();
+    };
+
+    // زر شحن رصيد
+    document.getElementById('chargeBalanceBtn').onclick = function() {
+        const code = userData?.walletCode || userData?.userCode || '';
+        const msg = 'السلام عليكم اريد شحن رصيد - كود المحفظة: ' + code;
+        window.open('https://wa.me/' + CONFIG.adminWhatsApp + '?text=' + encodeURIComponent(msg), '_blank');
+    };
+
+    // زر نشر فرصة عمل
+    document.getElementById('quickPublishJob').onclick = function() {
+        window.open('https://wa.me/' + CONFIG.adminWhatsApp + '?text=' + encodeURIComponent('السلام عليكم اريد نشر فرصة عمل'), '_blank');
+    };
+
+    // زر نشر خبر
+    document.getElementById('quickPublishNews').onclick = function() {
+        window.open('https://wa.me/' + CONFIG.adminWhatsApp + '?text=' + encodeURIComponent('السلام عليكم اريد نشر خبر'), '_blank');
+    };
+
+    // نسخ كود المحفظة
+    document.getElementById('profileCode').onclick = function() {
+        const code = this.textContent;
+        if (code && code !== '------') {
+            navigator.clipboard.writeText(code).then(() => {
+                showToast('تم نسخ الكود', 'success');
+            }).catch(() => {
+                showToast('تعذر النسخ', 'error');
+            });
+        }
+    };
+
+    // ==========================================
+    // التنقل بين الأقسام
+    // ==========================================
+    document.querySelectorAll('.nav-btn').forEach(function(btn) {
+        btn.onclick = function() {
+            var section = this.getAttribute('data-section');
+            
+            document.querySelectorAll('.nav-btn').forEach(function(b) {
+                b.classList.remove('active');
+            });
+            this.classList.add('active');
+            
+            document.querySelectorAll('.section').forEach(function(s) {
+                s.classList.remove('active');
+            });
+            document.getElementById(section + 'Section').classList.add('active');
+            
+            currentSection = section;
+            
+            if (section !== 'profile') {
+                var container = document.getElementById(section + 'Container');
+                if (container.children.length === 0) {
+                    loadPosts(section);
+                }
+            }
+        };
+    });
+
+    // ==========================================
+    // تحميل المنشورات
+    // ==========================================
+    function loadPosts(section, loadMore) {
+        var state = loadStates[section];
+        if (state.loading) return;
+        state.loading = true;
+        
+        var colMap = { jobs: 'jobPosts', realestate: 'realEstatePosts', news: 'newsPosts' };
+        var loaderMap = { jobs: 'loaderJobs', realestate: 'loaderRealestate', news: 'loaderNews' };
+        var btnMap = { jobs: 'loadMoreBtnJobs', realestate: 'loadMoreBtnRealestate', news: 'loadMoreBtnNews' };
+        
+        var collectionName = colMap[section];
+        var container = document.getElementById(section + 'Container');
+        var loaderEl = document.getElementById(loaderMap[section]);
+        var btnEl = document.getElementById(btnMap[section]);
+
+        if (loadMore) loaderEl.style.display = 'block';
+        
+        var q = db.collection(collectionName)
+            .orderBy('createdAt', 'desc')
+            .limit(CONFIG.postsPerPage);
+
+        if (loadMore && state.lastDoc) {
+            q = q.startAfter(state.lastDoc);
+        }
+
+        q.get().then(function(snapshot) {
+            var posts = [];
+            snapshot.forEach(function(doc) {
+                posts.push({ id: doc.id, docData: doc.data() });
+            });
+
+            if (!loadMore) container.innerHTML = '';
+            
+            if (posts.length === 0 && !loadMore) {
+                container.innerHTML = '<p style="text-align:center;padding:40px;color:#999;">لا توجد منشورات حالياً</p>';
+                btnEl.style.display = 'none';
+            }
+
+            posts.forEach(function(item) {
+                var post = item.docData;
+                var card = document.createElement('div');
+                card.className = 'post-card';
+                
+                var mediaHTML = '';
+                if (post.imageUrl && post.imageUrl.indexOf('data:image') === 0) {
+                    mediaHTML = '<div class="post-media"><img src="' + post.imageUrl + '" alt="صورة"></div>';
+                }
+                
+                var contactBtn = '';
+                if (post.contactWhatsApp) {
+                    contactBtn = '<a href="https://wa.me/' + post.contactWhatsApp + '" target="_blank" class="contact-btn">تواصل واتساب</a>';
+                }
+                
+                card.innerHTML = 
+                    '<div class="post-header">' +
+                        '<h3>' + (post.title || '') + '</h3>' +
+                        (post.isPinned ? '<span class="pinned-badge">📌 مثبت</span>' : '') +
+                    '</div>' +
+                    mediaHTML +
+                    (post.description ? '<div class="post-description">' + post.description + '</div>' : '') +
+                    (post.price ? '<div class="post-price">السعر: ' + post.price + '</div>' : '') +
+                    (post.location ? '<div class="post-location">📍 ' + post.location + '</div>' : '') +
+                    '<div class="post-footer">' + contactBtn + '</div>';
+                
+                container.appendChild(card);
+            });
+
+            state.lastDoc = snapshot.docs[snapshot.docs.length - 1] || null;
+            state.hasMore = snapshot.docs.length === CONFIG.postsPerPage;
+            
+            btnEl.style.display = state.hasMore ? 'block' : 'none';
+            state.loading = false;
+            loaderEl.style.display = 'none';
+        }).catch(function(e) {
+            console.error('خطأ:', e);
+            state.loading = false;
+            loaderEl.style.display = 'none';
+        });
+    }
+
+    // أزرار تحميل المزيد
+    document.getElementById('loadMoreBtnJobs').onclick = function() { loadPosts('jobs', true); };
+    document.getElementById('loadMoreBtnRealestate').onclick = function() { loadPosts('realestate', true); };
+    document.getElementById('loadMoreBtnNews').onclick = function() { loadPosts('news', true); };
+
+    // ==========================================
+    // نشر إعلان ممول
+    // ==========================================
+    document.getElementById('publishAdBtn').onclick = function() {
+        var modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = 
+            '<div class="modal-content">' +
+                '<h2>📊 نشر إعلان ممول</h2>' +
+                '<input type="text" id="adOwnerName" placeholder="اسم صاحب الإعلان">' +
+                '<input type="tel" id="adPhone" placeholder="رقم الهاتف">' +
+                '<input type="url" id="adRedirectUrl" placeholder="رابط التوجيه">' +
+                '<textarea id="adDescription" placeholder="وصف الإعلان" rows="3"></textarea>' +
+                '<label>صورة (اختياري):</label>' +
+                '<input type="file" id="adImage" accept="image/*">' +
+                '<input type="number" id="adDuration" placeholder="عدد الأيام" min="1" value="1">' +
+                '<div class="cost-info">التكلفة: <span id="adCost">10</span> رصيد</div>' +
+                '<div class="form-buttons">' +
+                    '<button class="btn-primary" id="submitAdBtn">نشر</button>' +
+                    '<button class="btn-secondary" id="cancelAdBtn">إلغاء</button>' +
+                '</div>' +
+            '</div>';
+        document.body.appendChild(modal);
+
+        document.getElementById('adDuration').oninput = function() {
+            document.getElementById('adCost').textContent = (parseInt(this.value) || 0) * CONFIG.dailyAdCost;
+        };
+
+        document.getElementById('cancelAdBtn').onclick = function() { modal.remove(); };
+
+        document.getElementById('submitAdBtn').onclick = function() {
+            var days = parseInt(document.getElementById('adDuration').value) || 0;
+            var cost = days * CONFIG.dailyAdCost;
+            
+            if ((userData?.balance || 0) < cost) {
+                showToast('رصيد غير كافي', 'error');
+                return;
+            }
+
+            this.disabled = true;
+            this.textContent = '⏳...';
+
+            var imageFile = document.getElementById('adImage').files[0];
+            var imagePromise = Promise.resolve(null);
+            
+            if (imageFile) {
+                imagePromise = new Promise(function(resolve) {
+                    var reader = new FileReader();
+                    reader.onload = function() { resolve(reader.result); };
+                    reader.readAsDataURL(imageFile);
+                });
+            }
+
+            imagePromise.then(function(imageBase64) {
+                return db.collection('users').doc(currentUser.uid).update({
+                    balance: firebase.firestore.FieldValue.increment(-cost)
+                }).then(function() {
+                    return db.collection('ads').add({
+                        ownerName: document.getElementById('adOwnerName').value || '',
+                        phone: document.getElementById('adPhone').value || '',
+                        redirectUrl: document.getElementById('adRedirectUrl').value || '',
+                        description: document.getElementById('adDescription').value || '',
+                        imageUrl: imageBase64 || '',
+                        durationDays: days,
+                        cost: cost,
+                        userId: currentUser.uid,
+                        status: 'pending',
+                        approved: false,
+                        publishedBy: 'user',
+                        createdAt: new Date().toISOString()
+                    });
+                });
+            }).then(function() {
+                modal.remove();
+                return db.collection('users').doc(currentUser.uid).get();
+            }).then(function(snap) {
+                userData = snap.data();
+                document.getElementById('profileBalance').textContent = userData.balance || 0;
+                showToast('تم الإرسال للمراجعة', 'success');
+            }).catch(function(e) {
+                showToast('خطأ: ' + e.message, 'error');
+            });
+        };
+    };
+
+    // ==========================================
+    // نشر عقار
+    // ==========================================
+    document.getElementById('publishRealEstateBtn').onclick = function() {
+        var cost = CONFIG.realEstatePostCost;
+        
+        if ((userData?.balance || 0) < cost) {
+            showToast('رصيد غير كافي', 'error');
+            return;
+        }
+
+        var modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = 
+            '<div class="modal-content">' +
+                '<h2>🏠 نشر عقار</h2>' +
+                '<input type="text" id="reTitle" placeholder="عنوان العقار">' +
+                '<select id="reType"><option value="sale">للبيع</option><option value="rent">للإيجار</option></select>' +
+                '<input type="text" id="reLocation" placeholder="الموقع">' +
+                '<input type="text" id="rePrice" placeholder="السعر">' +
+                '<input type="tel" id="reContactWhatsApp" placeholder="رقم الواتساب">' +
+                '<textarea id="reDescription" placeholder="وصف العقار" rows="3"></textarea>' +
+                '<label>صورة (اختياري):</label>' +
+                '<input type="file" id="reImage" accept="image/*">' +
+                '<div class="cost-info">تكلفة النشر: ' + cost + ' رصيد</div>' +
+                '<div class="form-buttons">' +
+                    '<button class="btn-primary" id="submitREBtn">نشر</button>' +
+                    '<button class="btn-secondary" id="cancelREBtn">إلغاء</button>' +
+                '</div>' +
+            '</div>';
+        document.body.appendChild(modal);
+
+        document.getElementById('cancelREBtn').onclick = function() { modal.remove(); };
+
+        document.getElementById('submitREBtn').onclick = function() {
+            this.disabled = true;
+            this.textContent = '⏳...';
+
+            var imageFile = document.getElementById('reImage').files[0];
+            var imagePromise = Promise.resolve(null);
+            
+            if (imageFile) {
+                imagePromise = new Promise(function(resolve) {
+                    var reader = new FileReader();
+                    reader.onload = function() { resolve(reader.result); };
+                    reader.readAsDataURL(imageFile);
+                });
+            }
+
+            imagePromise.then(function(imageBase64) {
+                return db.collection('users').doc(currentUser.uid).update({
+                    balance: firebase.firestore.FieldValue.increment(-cost)
+                }).then(function() {
+                    return db.collection('realEstatePosts').add({
+                        title: document.getElementById('reTitle').value || '',
+                        type: document.getElementById('reType').value,
+                        location: document.getElementById('reLocation').value || '',
+                        price: document.getElementById('rePrice').value || '',
+                        contactWhatsApp: document.getElementById('reContactWhatsApp').value || '',
+                        description: document.getElementById('reDescription').value || '',
+                        imageUrl: imageBase64 || '',
+                        userId: currentUser.uid,
+                        status: 'pending',
+                        approved: false,
+                        publishedBy: 'user',
+                        createdAt: new Date().toISOString()
+                    });
+                });
+            }).then(function() {
+                modal.remove();
+                return db.collection('users').doc(currentUser.uid).get();
+            }).then(function(snap) {
+                userData = snap.data();
+                document.getElementById('profileBalance').textContent = userData.balance || 0;
+                showToast('تم الإرسال للمراجعة', 'success');
+            }).catch(function(e) {
+                showToast('خطأ: ' + e.message, 'error');
+            });
+        };
+    };
+
+    // ==========================================
+    // زر تثبيت التطبيق
+    // ==========================================
+    var deferredPrompt = null;
+
+    function isAppInstalled() {
+        return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    }
+
+    function updateInstallBtn() {
+        var btn = document.getElementById('installAppBtn');
+        if (isAppInstalled()) {
+            btn.textContent = '✅ التطبيق مثبت بالفعل';
+            btn.disabled = true;
+            btn.style.opacity = '0.7';
+        }
+    }
+
+    window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        deferredPrompt = e;
+        updateInstallBtn();
+    });
+
+    document.getElementById('installAppBtn').onclick = function() {
+        if (isAppInstalled()) {
+            showToast('التطبيق مثبت بالفعل', 'success');
+            return;
+        }
+        
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            deferredPrompt.userChoice.then(function(result) {
+                if (result.outcome === 'accepted') {
+                    showToast('تم تثبيت التطبيق بنجاح', 'success');
+                    deferredPrompt = null;
+                    updateInstallBtn();
+                }
+            });
+        } else {
+            alert('للتثبيت:\nافتح قائمة المتصفح (⋮) ثم اختر "تثبيت التطبيق"');
+        }
+    };
+
+    window.addEventListener('appinstalled', function() {
+        showToast('تم تثبيت التطبيق بنجاح', 'success');
+        updateInstallBtn();
+    });
+
+    // تحديث زر التثبيت عند التحميل
+    updateInstallBtn();
+    </script>
+</body>
+</html>
