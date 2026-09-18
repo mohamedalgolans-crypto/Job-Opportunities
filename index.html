@@ -588,6 +588,40 @@
     }
 
     // ==========================================
+    // إظهار شاشة تسجيل الدخول مع رسالة خطأ
+    // ==========================================
+    function showLoginWithError(msg) {
+        document.getElementById('loadingScreen').style.display = 'none';
+        document.getElementById('mainApp').style.display = 'none';
+        document.getElementById('loginScreen').style.display = 'flex';
+        
+        const errorEl = document.getElementById('loginError');
+        if (errorEl) {
+            errorEl.textContent = '❌ ' + msg;
+            errorEl.style.display = 'block';
+        }
+        
+        const btn = document.getElementById('googleLoginBtn');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'تسجيل الدخول بحساب Google';
+        }
+    }
+
+    // ==========================================
+    // معالجة نتيجة signInWithRedirect (للجوال)
+    // ==========================================
+    auth.getRedirectResult().catch(function(error) {
+        console.error('Redirect error:', error);
+        if (error.code && error.code !== 'auth/no-auth-event') {
+            let msg = 'خطأ في تسجيل الدخول';
+            if (error.code === 'auth/unauthorized-domain') msg = 'النطاق غير مصرح به';
+            if (error.code === 'auth/operation-not-allowed') msg = 'تسجيل Google غير مفعّل';
+            showLoginWithError(msg);
+        }
+    });
+
+    // ==========================================
     // المصادقة
     // ==========================================
     auth.onAuthStateChanged(async (user) => {
@@ -603,33 +637,36 @@
                 
                 if (!snap.exists) {
                     const code = 'FA-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-                    await userRef.set({
+                    const newUser = {
                         uid: user.uid,
-                        email: user.email,
-                        name: user.displayName,
+                        email: user.email || '',
+                        name: user.displayName || 'مستخدم جديد',
                         userCode: code,
                         walletCode: code,
                         balance: 0,
                         createdAt: new Date().toISOString(),
                         isFrozen: false,
                         lastLogin: new Date().toISOString()
-                    });
+                    };
+                    await userRef.set(newUser);
+                    userData = newUser;
                 } else {
                     await userRef.update({ lastLogin: new Date().toISOString() }).catch(() => {});
+                    userData = snap.data();
                 }
-
-                const data = (await userRef.get()).data();
-                userData = data;
                 
-                document.getElementById('profileName').textContent = data.name || '';
-                document.getElementById('profileCode').textContent = data.walletCode || data.userCode || '------';
-                document.getElementById('profileBalance').textContent = data.balance || 0;
+                document.getElementById('profileName').textContent = userData.name || '';
+                document.getElementById('profileCode').textContent = userData.walletCode || userData.userCode || '------';
+                document.getElementById('profileBalance').textContent = userData.balance || 0;
                 
                 loadPosts('jobs');
             } catch (e) {
-                console.error('خطأ:', e);
+                console.error('🔴 خطأ Firestore:', e.code, e.message, e);
+                showLoginWithError('فشل تحميل البيانات: ' + (e.code || e.message));
             }
         } else {
+            currentUser = null;
+            userData = null;
             document.getElementById('loadingScreen').style.display = 'none';
             document.getElementById('loginScreen').style.display = 'flex';
             document.getElementById('mainApp').style.display = 'none';
@@ -637,20 +674,47 @@
     });
 
     // ==========================================
-    // ربط جميع الأزرار - onclick مباشر
+    // ربط جميع الأزرار
     // ==========================================
 
-    // تسجيل الدخول
+    // تسجيل الدخول (مع دعم الجوال)
     document.getElementById('googleLoginBtn').onclick = async function() {
         this.disabled = true;
         this.textContent = '⏳ جاري الاتصال...';
+        
+        const errorEl = document.getElementById('loginError');
+        if (errorEl) errorEl.style.display = 'none';
+        
         try {
             const provider = new firebase.auth.GoogleAuthProvider();
             provider.setCustomParameters({ prompt: 'select_account' });
-            await auth.signInWithPopup(provider);
+            
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            
+            if (isMobile) {
+                await auth.signInWithRedirect(provider);
+                // لن يصل هنا — سيتم إعادة التوجيه
+            } else {
+                await auth.signInWithPopup(provider);
+            }
         } catch (e) {
-            document.getElementById('loginError').textContent = '❌ خطأ في تسجيل الدخول، حاول مرة أخرى';
-            document.getElementById('loginError').style.display = 'block';
+            console.error('🔴 خطأ تسجيل الدخول:', e.code, e.message, e);
+            
+            let msg = 'خطأ في تسجيل الدخول، حاول مرة أخرى';
+            const errorMap = {
+                'auth/popup-closed-by-user': 'تم إغلاق نافذة تسجيل الدخول',
+                'auth/cancelled-popup-request': 'تم إلغاء الطلب',
+                'auth/unauthorized-domain': 'هذا النطاق غير مصرح به',
+                'auth/popup-blocked': 'المتصفح منع النافذة المنبثقة',
+                'auth/operation-not-allowed': 'تسجيل Google غير مفعّل في Firebase',
+                'auth/network-request-failed': 'فشل الاتصال بالشبكة'
+            };
+            if (errorMap[e.code]) msg = errorMap[e.code];
+            
+            if (errorEl) {
+                errorEl.textContent = '❌ ' + msg;
+                errorEl.style.display = 'block';
+            }
             this.disabled = false;
             this.textContent = 'تسجيل الدخول بحساب Google';
         }
@@ -794,7 +858,7 @@
             state.loading = false;
             loaderEl.style.display = 'none';
         }).catch(function(e) {
-            console.error('خطأ:', e);
+            console.error('🔴 خطأ تحميل:', e);
             state.loading = false;
             loaderEl.style.display = 'none';
         });
