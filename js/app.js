@@ -7,16 +7,19 @@ import Router from './router.js';
 
 class App {
     constructor() {
-        this.authManager = new AuthManager();
-        this.db = new Database(this.authManager.app);
-        this.cache = new CacheManager();
-        this.notifications = new NotificationSystem(this.authManager.app);
-        this.router = new Router();
-
+        try {
+            this.authManager = new AuthManager();
+            this.db = new Database(this.authManager.app);
+            this.cache = new CacheManager();
+            this.notifications = new NotificationSystem(this.authManager.app);
+            this.router = new Router();
+        } catch (err) {
+            console.error('خطأ أثناء إنشاء الكائنات:', err);
+        }
+        
         this.currentUser = null;
         this.userData = null;
-        this.initialized = false;
-
+        
         // حالة التحميل لكل قسم
         this.loadStates = {
             jobs: { lastDoc: null, hasMore: true, loading: false },
@@ -28,18 +31,55 @@ class App {
     // بدء التطبيق
     async init() {
         try {
-            // انتظار تهيئة الكاش
-            await this.cache.init();
-
+            // انتظار تهيئة الكاش إن وجد
+            if (this.cache && typeof this.cache.init === 'function') {
+                await this.cache.init().catch(e => console.warn('فشل تهيئة الكاش:', e));
+            }
+            
             // إعداد أزرار النشر السريع
             this.setupQuickPublishButtons();
+            
+            // مراقبة حالة المصادقة
+            this.authManager.onAuthChange(async (user) => {
+                if (user) {
+                    this.currentUser = user;
+                    
+                    // إظهار الواجهة الرئيسية فوراً لتفادي الرجوع لشاشة الدخول
+                    this.showMainApp();
+                    
+                    try {
+                        await this.loadUserData();
+                    } catch (e) {
+                        console.error('فشل جلب بيانات المستخدم، متابعة التشغيل:', e);
+                    }
 
-            // إعداد زر تسجيل الدخول مرة واحدة فقط
-            this.setupLoginButton();
-
-            // إعداد الأزرار العامة
-            document.getElementById('loadMoreBtn')?.addEventListener('click', () => {
-                this.loadMorePosts();
+                    if (this.router) {
+                        this.router.navigateTo('jobs');
+                    }
+                    this.loadCurrentSection();
+                    
+                    // بدء الإشعارات بشكل آمن
+                    if (this.notifications) {
+                        try {
+                            this.notifications.startListening((notifs) => {
+                                notifs.forEach(n => {
+                                    this.notifications.showToast(n.body || n.title, 'info');
+                                    this.notifications.sendBrowserNotification(n.title, n.body);
+                                });
+                            });
+                            await this.notifications.requestPermission().catch(() => {});
+                        } catch (e) {
+                            console.warn('تجاوز خطأ الإشعارات:', e);
+                        }
+                    }
+                    
+                    // تنظيف الكاش القديم
+                    if (this.cache && typeof this.cache.clearOldCache === 'function') {
+                        this.cache.clearOldCache().catch(() => {});
+                    }
+                } else {
+                    this.showLoginScreen();
+                }
             });
 
             // الاستماع لتغيير القسم
@@ -47,129 +87,36 @@ class App {
                 this.loadCurrentSection();
             });
 
-            // تهيئة أزرار التنقل
-            try {
-                this.router.initNavigation();
-            } catch (e) {
-                console.warn('فشل تهيئة التنقل:', e);
-            }
-
-            // مراقبة حالة المصادقة
-            this.authManager.onAuthChange(async (user) => {
-                await this.handleAuthChange(user);
+            // إعداد زر تحميل المزيد
+            document.getElementById('loadMoreBtn')?.addEventListener('click', () => {
+                this.loadMorePosts();
             });
+
+            // تهيئة أزرار التنقل
+            if (this.router && typeof this.router.initNavigation === 'function') {
+                this.router.initNavigation();
+            }
 
         } catch (error) {
             console.error('خطأ في تهيئة التطبيق:', error);
         }
     }
 
-    // معالجة تغير حالة المصادقة
-    async handleAuthChange(user) {
-        console.log('AUTH CHANGE:', user ? user.uid : 'null');
-
-        if (!user) {
-            this.currentUser = null;
-            this.userData = null;
-            this.showLoginScreen();
-            return;
-        }
-
-        // مستخدم جديد
-        this.currentUser = user;
-
-        // اعرض التطبيق أولاً حتى لا تظهر شاشة الدخول مؤقتاً
-        this.showMainApp();
-
-        // تحميل بيانات المستخدم
-        try {
-            await this.loadUserData();
-        } catch (e) {
-            console.error('فشل تحميل بيانات المستخدم:', e);
-        }
-
-        // الانتقال للقسم الافتراضي
-        try {
-            this.router.navigateTo('jobs');
-        } catch (e) {
-            console.warn('فشل التنقل للقسم الافتراضي:', e);
-        }
-
-        // تحميل محتوى القسم الحالي
-        try {
-            await this.loadCurrentSection();
-        } catch (e) {
-            console.error('فشل تحميل القسم:', e);
-        }
-
-        // بدء الإشعارات (منفصلة حتى لا تُسقط التطبيق)
-        try {
-            this.notifications.startListening((notifs) => {
-                notifs.forEach(n => {
-                    try {
-                        this.notifications.showToast(n.body || n.title, 'info');
-                        this.notifications.sendBrowserNotification(n.title, n.body);
-                    } catch (e) {
-                        console.warn('خطأ في عرض الإشعار:', e);
-                    }
-                });
-            });
-        } catch (e) {
-            console.warn('startListening فشل:', e);
-        }
-
-        // طلب إذن الإشعارات
-        try {
-            await this.notifications.requestPermission();
-        } catch (e) {
-            console.warn('requestPermission فشل:', e);
-        }
-
-        // تنظيف الكاش القديم
-        try {
-            await this.cache.clearOldCache();
-        } catch (e) {
-            console.warn('clearOldCache فشل:', e);
-        }
-    }
-
-    // إعداد زر تسجيل الدخول (مرة واحدة فقط)
-    setupLoginButton() {
-        const btn = document.getElementById('googleLoginBtn');
-        if (!btn) return;
-
-        // احذف أي listener قديم باستخدام onclick
-        btn.onclick = async () => {
-            try {
-                btn.disabled = true;
-                await this.authManager.signInWithGoogle();
-            } catch (error) {
-                console.error('فشل تسجيل الدخول:', error);
-                const msg = error?.message || 'حدث خطأ غير معروف';
-                try {
-                    this.notifications.showToast('فشل تسجيل الدخول: ' + msg, 'error');
-                } catch (_) {
-                    alert('فشل تسجيل الدخول: ' + msg);
-                }
-            } finally {
-                btn.disabled = false;
-            }
-        };
-    }
-
     // تحميل بيانات المستخدم
     async loadUserData() {
         if (!this.currentUser) return;
-
+        
         // محاولة التحميل من الكاش أولاً
-        try {
-            const cachedData = await this.cache.getUserData(this.currentUser.uid);
-            if (cachedData) {
-                this.userData = cachedData;
-                this.updateProfileUI();
+        if (this.cache && typeof this.cache.getUserData === 'function') {
+            try {
+                const cachedData = await this.cache.getUserData(this.currentUser.uid);
+                if (cachedData) {
+                    this.userData = cachedData;
+                    this.updateProfileUI();
+                }
+            } catch (e) {
+                console.warn('خطأ كاش المستخدم:', e);
             }
-        } catch (e) {
-            console.warn('cache.getUserData فشل:', e);
         }
 
         // تحديث من السيرفر
@@ -177,10 +124,8 @@ class App {
             const freshData = await this.db.getUserData(this.currentUser.uid);
             if (freshData) {
                 this.userData = freshData;
-                try {
-                    await this.cache.storeUserData(freshData);
-                } catch (e) {
-                    console.warn('cache.storeUserData فشل:', e);
+                if (this.cache && typeof this.cache.storeUserData === 'function') {
+                    await this.cache.storeUserData(freshData).catch(() => {});
                 }
                 this.updateProfileUI();
             }
@@ -195,74 +140,58 @@ class App {
 
         const nameEl = document.getElementById('profileName');
         const codeEl = document.getElementById('profileCode');
-        const balEl = document.getElementById('profileBalance');
+        const balanceEl = document.getElementById('profileBalance');
 
         if (nameEl) nameEl.textContent = this.userData.name || '';
-        if (codeEl) codeEl.textContent = this.userData.userCode || '';
-        if (balEl) balEl.textContent = this.userData.balance || 0;
-    }
-
-    // الحصول على اسم المجموعة من اسم القسم
-    getCollectionName(route) {
-        switch (route) {
-            case 'jobs': return 'jobPosts';
-            case 'realestate': return 'realEstatePosts';
-            case 'news': return 'newsPosts';
-            default: return null;
-        }
+        if (codeEl) codeEl.textContent = this.userData.userCode || this.userData.walletCode || '';
+        if (balanceEl) balanceEl.textContent = this.userData.balance || 0;
     }
 
     // تحميل محتوى القسم الحالي
     async loadCurrentSection() {
-        const route = this.router.getCurrentRoute();
+        const route = this.router ? this.router.getCurrentRoute() : 'jobs';
         const state = this.loadStates[route];
-
-        if (!state) return;
-        if (state.loading) return;
-
-        const collectionName = this.getCollectionName(route);
-        if (!collectionName) return;
-
+        
+        if (!state || state.loading) return;
+        
         state.loading = true;
         this.showLoader();
 
         try {
+            let collectionName;
+            switch(route) {
+                case 'jobs': collectionName = 'jobPosts'; break;
+                case 'realestate': collectionName = 'realEstatePosts'; break;
+                case 'news': collectionName = 'newsPosts'; break;
+                default: collectionName = 'jobPosts'; break;
+            }
+
             // محاولة التحميل من الكاش أولاً
-            try {
-                const cachedPosts = await this.cache.getPosts(collectionName);
+            if (this.cache && typeof this.cache.getPosts === 'function') {
+                const cachedPosts = await this.cache.getPosts(collectionName).catch(() => null);
                 if (cachedPosts && cachedPosts.length > 0) {
                     this.renderPosts(cachedPosts, route);
                 }
-            } catch (e) {
-                console.warn('cache.getPosts فشل:', e);
             }
 
             // التحميل من السيرفر
-            const result = await this.db.getPosts(collectionName, null, CONFIG.postsPerPage);
-
+            const postsPerPage = typeof CONFIG !== 'undefined' ? CONFIG.postsPerPage : 10;
+            const result = await this.db.getPosts(collectionName, null, postsPerPage);
+            
             if (result && result.posts && result.posts.length > 0) {
-                // تخزين في الكاش
-                try {
-                    await this.cache.storePosts(result.posts, collectionName);
-                } catch (e) {
-                    console.warn('cache.storePosts فشل:', e);
+                if (this.cache && typeof this.cache.storePosts === 'function') {
+                    await this.cache.storePosts(result.posts, collectionName).catch(() => {});
                 }
-
-                // عرض المنشورات
+                
                 this.renderPosts(result.posts, route);
-
-                // تحديث حالة التحميل
+                
                 state.lastDoc = result.lastVisible;
                 state.hasMore = result.hasMore;
-            } else {
-                state.hasMore = false;
             }
 
         } catch (error) {
             console.error('خطأ في تحميل المحتوى:', error);
-            try {
-                this.notifications.showToast('خطأ في تحميل المحتوى', 'error');
-            } catch (_) {}
+            if (this.notifications) this.notifications.showToast('خطأ في تحميل المحتوى', 'error');
         } finally {
             state.loading = false;
             this.hideLoader();
@@ -272,32 +201,34 @@ class App {
 
     // تحميل المزيد من المنشورات
     async loadMorePosts() {
-        const route = this.router.getCurrentRoute();
+        const route = this.router ? this.router.getCurrentRoute() : 'jobs';
         const state = this.loadStates[route];
-
+        
         if (!state || !state.hasMore || state.loading) return;
-
-        const collectionName = this.getCollectionName(route);
-        if (!collectionName) return;
-
+        
         state.loading = true;
         this.showLoader();
 
         try {
-            const result = await this.db.getPosts(collectionName, state.lastDoc, CONFIG.postsPerPage);
+            let collectionName;
+            switch(route) {
+                case 'jobs': collectionName = 'jobPosts'; break;
+                case 'realestate': collectionName = 'realEstatePosts'; break;
+                case 'news': collectionName = 'newsPosts'; break;
+                default: return;
+            }
 
+            const postsPerPage = typeof CONFIG !== 'undefined' ? CONFIG.postsPerPage : 10;
+            const result = await this.db.getPosts(collectionName, state.lastDoc, postsPerPage);
+            
             if (result && result.posts && result.posts.length > 0) {
-                try {
-                    await this.cache.storePosts(result.posts, collectionName);
-                } catch (e) {
-                    console.warn('cache.storePosts فشل:', e);
+                if (this.cache && typeof this.cache.storePosts === 'function') {
+                    await this.cache.storePosts(result.posts, collectionName).catch(() => {});
                 }
                 this.appendPosts(result.posts, route);
-
+                
                 state.lastDoc = result.lastVisible;
                 state.hasMore = result.hasMore;
-            } else {
-                state.hasMore = false;
             }
 
         } catch (error) {
@@ -315,7 +246,7 @@ class App {
         if (!container) return;
 
         container.innerHTML = '';
-
+        
         posts.forEach((post, index) => {
             if (index > 0 && index % 5 === 0) {
                 this.renderAdSlot(container);
@@ -341,7 +272,7 @@ class App {
     renderPostCard(post, container, section) {
         const card = document.createElement('div');
         card.className = 'post-card';
-
+        
         let mediaContent = '';
         if (post.videoUrl) {
             mediaContent = `
@@ -369,9 +300,7 @@ class App {
                 </a>`;
         }
 
-        const createdAt = post.createdAt
-            ? new Date(post.createdAt).toLocaleDateString('ar-SA')
-            : '';
+        const formattedDate = post.createdAt ? new Date(post.createdAt).toLocaleDateString('ar-SA') : '';
 
         card.innerHTML = `
             <div class="post-header">
@@ -386,7 +315,7 @@ class App {
             ${post.source ? `<div class="post-source">📰 المصدر: ${post.source}</div>` : ''}
             <div class="post-footer">
                 ${contactButton}
-                <span class="post-date">${createdAt}</span>
+                <span class="post-date">${formattedDate}</span>
             </div>
         `;
 
@@ -397,20 +326,19 @@ class App {
     renderAdSlot(container) {
         const adSlot = document.createElement('div');
         adSlot.className = 'ad-slot';
-        adSlot.id = `ad-slot-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        adSlot.id = `ad-slot-${Date.now()}`;
         adSlot.innerHTML = '<div class="ad-placeholder">إعلان ممول</div>';
         container.appendChild(adSlot);
-
+        
         this.loadSponsoredAd(adSlot.id);
     }
 
     // تحميل إعلان ممول
     async loadSponsoredAd(slotId) {
         try {
-            const { getFirestore, collection, query, where, orderBy, limit, getDocs } =
-                await import("https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js");
+            const { getFirestore, collection, query, where, orderBy, limit, getDocs } = await import("https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js");
             const db = getFirestore(this.authManager.app);
-
+            
             const q = query(
                 collection(db, "ads"),
                 where("approved", "==", true),
@@ -418,7 +346,7 @@ class App {
                 orderBy("createdAt", "desc"),
                 limit(1)
             );
-
+            
             const snapshot = await getDocs(q);
             if (!snapshot.empty) {
                 const ad = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
@@ -455,15 +383,15 @@ class App {
     // إعداد أزرار النشر السريع
     setupQuickPublishButtons() {
         document.getElementById('quickPublishJob')?.addEventListener('click', () => {
-            window.open(CONFIG.getWhatsAppLink('السلام عليكم اريد نشر فرصة عمل'), '_blank');
+            if (typeof CONFIG !== 'undefined') window.open(CONFIG.getWhatsAppLink('السلام عليكم اريد نشر فرصة عمل'), '_blank');
         });
 
         document.getElementById('quickPublishNews')?.addEventListener('click', () => {
-            window.open(CONFIG.getWhatsAppLink('السلام عليكم اريد نشر خبر'), '_blank');
+            if (typeof CONFIG !== 'undefined') window.open(CONFIG.getWhatsAppLink('السلام عليكم اريد نشر خبر'), '_blank');
         });
 
         document.getElementById('chargeBalanceBtn')?.addEventListener('click', () => {
-            window.open(CONFIG.getWhatsAppLink('السلام عليكم اريد شحن رصيد في تطبيق فرص عمل ماهي طرق الدفع المتاحة'), '_blank');
+            if (typeof CONFIG !== 'undefined') window.open(CONFIG.getWhatsAppLink('السلام عليكم اريد شحن رصيد في تطبيق فرص عمل ماهي طرق الدفع المتاحة'), '_blank');
         });
 
         document.getElementById('publishAdBtn')?.addEventListener('click', () => {
@@ -477,8 +405,7 @@ class App {
 
     // عرض نموذج نشر إعلان ممول
     showPublishAdForm() {
-        if (document.getElementById('adFormModal')) return;
-
+        const dailyCost = typeof CONFIG !== 'undefined' ? CONFIG.dailyAdCost : 10;
         const formHTML = `
             <div id="adFormModal" class="modal">
                 <div class="modal-content">
@@ -494,7 +421,7 @@ class App {
                             <option value="news">أخبار فقط</option>
                         </select>
                         <textarea id="adDescription" placeholder="وصف الإعلان" rows="3" required></textarea>
-                        <input type="number" id="adDuration" placeholder="عدد الأيام (10 رصيد لليوم)" min="1" required>
+                        <input type="number" id="adDuration" placeholder="عدد الأيام (${dailyCost} رصيد لليوم)" min="1" required>
                         <div class="cost-preview">التكلفة: <span id="adCost">0</span> رصيد</div>
                         <div class="form-buttons">
                             <button type="submit" class="btn-primary">نشر (في انتظار الموافقة)</button>
@@ -509,7 +436,7 @@ class App {
 
         document.getElementById('adDuration').addEventListener('input', (e) => {
             const days = parseInt(e.target.value) || 0;
-            document.getElementById('adCost').textContent = days * CONFIG.dailyAdCost;
+            document.getElementById('adCost').textContent = days * dailyCost;
         });
 
         document.getElementById('adForm').addEventListener('submit', async (e) => {
@@ -525,19 +452,18 @@ class App {
 
             try {
                 await this.db.publishAd(this.currentUser.uid, adData, duration);
-                this.notifications.showToast('تم إرسال الإعلان للمراجعة', 'success');
+                if (this.notifications) this.notifications.showToast('تم إرسال الإعلان للمراجعة', 'success');
                 document.getElementById('adFormModal').remove();
                 await this.loadUserData();
             } catch (error) {
-                this.notifications.showToast(error.message, 'error');
+                if (this.notifications) this.notifications.showToast(error.message, 'error');
             }
         });
     }
 
     // عرض نموذج نشر عقار
     showPublishRealEstateForm() {
-        if (document.getElementById('realEstateFormModal')) return;
-
+        const postCost = typeof CONFIG !== 'undefined' ? CONFIG.realEstatePostCost : 0;
         const formHTML = `
             <div id="realEstateFormModal" class="modal">
                 <div class="modal-content">
@@ -559,7 +485,7 @@ class App {
                         <input type="text" id="rePrice" placeholder="السعر">
                         <input type="tel" id="reContactWhatsApp" placeholder="رقم الواتساب للتواصل">
                         <textarea id="reDescription" placeholder="وصف العقار" rows="3"></textarea>
-                        <div class="cost-info">تكلفة النشر: ${CONFIG.realEstatePostCost} رصيد</div>
+                        <div class="cost-info">تكلفة النشر: ${postCost} رصيد</div>
                         <div class="form-buttons">
                             <button type="submit" class="btn-primary">نشر (في انتظار الموافقة)</button>
                             <button type="button" class="btn-secondary" onclick="document.getElementById('realEstateFormModal').remove()">إلغاء</button>
@@ -586,49 +512,64 @@ class App {
 
             try {
                 await this.db.publishRealEstate(this.currentUser.uid, data);
-                this.notifications.showToast('تم إرسال العقار للمراجعة', 'success');
+                if (this.notifications) this.notifications.showToast('تم إرسال العقار للمراجعة', 'success');
                 document.getElementById('realEstateFormModal').remove();
                 await this.loadUserData();
             } catch (error) {
-                this.notifications.showToast(error.message, 'error');
+                if (this.notifications) this.notifications.showToast(error.message, 'error');
             }
         });
     }
 
     // عرض شاشة تسجيل الدخول
     showLoginScreen() {
-        const loginScreen = document.getElementById('loginScreen');
-        const mainApp = document.getElementById('mainApp');
-        if (loginScreen) loginScreen.style.display = 'flex';
-        if (mainApp) mainApp.style.display = 'none';
+        const loginEl = document.getElementById('loginScreen');
+        const mainEl = document.getElementById('mainApp');
+        if (loginEl) loginEl.style.display = 'flex';
+        if (mainEl) mainEl.style.display = 'none';
+
+        const googleBtn = document.getElementById('googleLoginBtn');
+        if (googleBtn) {
+            googleBtn.onclick = async () => {
+                try {
+                    await this.authManager.signInWithGoogle();
+                } catch (error) {
+                    if (this.notifications) {
+                        this.notifications.showToast('فشل تسجيل الدخول: ' + error.message, 'error');
+                    } else {
+                        alert('فشل تسجيل الدخول: ' + error.message);
+                    }
+                }
+            };
+        }
     }
 
     // عرض التطبيق الرئيسي
     showMainApp() {
-        const loginScreen = document.getElementById('loginScreen');
-        const mainApp = document.getElementById('mainApp');
-        if (loginScreen) loginScreen.style.display = 'none';
-        if (mainApp) mainApp.style.display = 'flex';
+        const loginEl = document.getElementById('loginScreen');
+        const mainEl = document.getElementById('mainApp');
+        if (loginEl) loginEl.style.display = 'none';
+        if (mainEl) mainEl.style.display = 'flex';
     }
 
     // عرض مؤشر التحميل
     showLoader() {
-        const el = document.getElementById('loader');
-        if (el) el.style.display = 'block';
+        const loader = document.getElementById('loader');
+        if (loader) loader.style.display = 'block';
     }
 
     // إخفاء مؤشر التحميل
     hideLoader() {
-        const el = document.getElementById('loader');
-        if (el) el.style.display = 'none';
+        const loader = document.getElementById('loader');
+        if (loader) loader.style.display = 'none';
     }
 
     // تحديث زر تحميل المزيد
     updateLoadMoreButton() {
-        const route = this.router.getCurrentRoute();
+        const route = this.router ? this.router.getCurrentRoute() : 'jobs';
         const state = this.loadStates[route];
         const btn = document.getElementById('loadMoreBtn');
-
+        
         if (btn) {
             btn.style.display = state?.hasMore ? 'block' : 'none';
         }
