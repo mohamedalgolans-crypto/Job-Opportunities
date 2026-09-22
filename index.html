@@ -34,7 +34,6 @@
             -webkit-tap-highlight-color: transparent;
         }
 
-        /* شاشة التحميل */
         .loading-screen {
             display: flex;
             justify-content: center;
@@ -56,7 +55,6 @@
 
         .loading-screen p { color: white; font-size: 18px; }
 
-        /* شاشة تسجيل الدخول */
         .login-screen {
             display: flex;
             justify-content: center;
@@ -95,7 +93,6 @@
         .google-btn:hover { background: #f5f5f5; border-color: var(--navy); }
         .google-btn:disabled { opacity: 0.6; }
 
-        /* التطبيق الرئيسي */
         .main-app {
             display: none;
             flex-direction: column;
@@ -139,11 +136,9 @@
         .quick-btn:hover { background: #ffca28; }
         .quick-btn:active { transform: scale(0.95); }
 
-        /* الأقسام */
         .section { display: none; padding: 20px; }
         .section.active { display: block; }
 
-        /* بطاقة منشور */
         .post-card {
             background: var(--white);
             border: 1px solid #e0e0e0;
@@ -206,7 +201,6 @@
 
         .post-date { color: var(--gray); font-size: 12px; }
 
-        /* الملف الشخصي */
         .profile-section { padding: 20px; }
 
         .profile-info {
@@ -262,7 +256,6 @@
         .action-btn.charge-btn { background: var(--success); }
         .action-btn.charge-btn:hover { background: #43a047; color: white; }
 
-        /* النوافذ المنبثقة */
         .modal {
             position: fixed;
             top: 0;
@@ -348,7 +341,6 @@
             margin: 10px 0;
         }
 
-        /* شريط التنقل السفلي */
         .bottom-nav {
             position: fixed;
             bottom: 0;
@@ -394,7 +386,6 @@
         }
         .nav-btn:active { transform: scale(0.95); }
 
-        /* التحميل */
         .loader { display: none; text-align: center; padding: 20px; }
 
         .spinner {
@@ -429,7 +420,6 @@
         .load-more-btn:hover { background: var(--yellow); color: var(--black); }
         .load-more-btn:active { transform: scale(0.95); }
 
-        /* رسائل */
         .toast {
             position: fixed;
             top: 20px;
@@ -462,13 +452,11 @@
 </head>
 <body>
 
-    <!-- شاشة التحميل -->
     <div id="loadingScreen" class="loading-screen">
         <div class="spinner"></div>
         <p>جاري التحميل...</p>
     </div>
 
-    <!-- شاشة تسجيل الدخول -->
     <div id="loginScreen" class="login-screen" style="display:none;">
         <div class="login-card">
             <h1>🎯 فرص عمل</h1>
@@ -478,7 +466,6 @@
         </div>
     </div>
 
-    <!-- التطبيق الرئيسي -->
     <div id="mainApp" class="main-app">
         <header class="app-header">
             <h2>🚀 فرص عمل</h2>
@@ -539,12 +526,30 @@
         </nav>
     </div>
 
-    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore-compat.js"></script>
 
     <script>
+    // ==========================================
+    // إلغاء تسجيل أي Service Worker قديم + مسح الكاش
+    // (يجب أن يكون أول شيء قبل أي كود آخر)
+    // ==========================================
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+            for (var i = 0; i < registrations.length; i++) {
+                registrations[i].unregister();
+            }
+        });
+    }
+    if ('caches' in window) {
+        caches.keys().then(function(names) {
+            for (var i = 0; i < names.length; i++) {
+                caches.delete(names[i]);
+            }
+        });
+    }
+
     // ==========================================
     // تهيئة Firebase
     // ==========================================
@@ -576,9 +581,6 @@
         news: { lastDoc: null, hasMore: true, loading: false }
     };
 
-    // ==========================================
-    // دالة الرسائل
-    // ==========================================
     function showToast(message, type) {
         const toast = document.createElement('div');
         toast.className = 'toast ' + (type === 'success' ? 'toast-success' : 'toast-error');
@@ -588,10 +590,11 @@
     }
 
     // ==========================================
-    // المصادقة
+    // المصادقة — مع كود تشخيص
     // ==========================================
     auth.onAuthStateChanged(async (user) => {
         if (user) {
+            console.log('✅ onAuthStateChanged: مستخدم مسجل', user.email);
             currentUser = user;
             document.getElementById('loadingScreen').style.display = 'none';
             document.getElementById('loginScreen').style.display = 'none';
@@ -627,9 +630,10 @@
                 
                 loadPosts('jobs');
             } catch (e) {
-                console.error('خطأ:', e);
+                console.error('❌ خطأ Firestore:', e);
             }
         } else {
+            console.log('ℹ️ onAuthStateChanged: لا يوجد مستخدم');
             document.getElementById('loadingScreen').style.display = 'none';
             document.getElementById('loginScreen').style.display = 'flex';
             document.getElementById('mainApp').style.display = 'none';
@@ -637,48 +641,49 @@
     });
 
     // ==========================================
-    // ربط جميع الأزرار - onclick مباشر
+    // تسجيل الدخول — مع كود تشخيص موسّع
     // ==========================================
-
-    // تسجيل الدخول
     document.getElementById('googleLoginBtn').onclick = async function() {
         this.disabled = true;
         this.textContent = '⏳ جاري الاتصال...';
+        
+        const errEl = document.getElementById('loginError');
+        errEl.style.display = 'none';
+        
         try {
+            console.log('🔵 بدء signInWithPopup...');
             const provider = new firebase.auth.GoogleAuthProvider();
             provider.setCustomParameters({ prompt: 'select_account' });
-            await auth.signInWithPopup(provider);
+            const result = await auth.signInWithPopup(provider);
+            console.log('✅ نجح الدخول:', result.user.email);
+            // onAuthStateChanged سيتولى الباقي
         } catch (e) {
-            document.getElementById('loginError').textContent = '❌ خطأ في تسجيل الدخول، حاول مرة أخرى';
-            document.getElementById('loginError').style.display = 'block';
+            console.error('❌ فشل تسجيل الدخول:', e.code, e.message);
+            errEl.textContent = '❌ ' + (e.code || '') + ' — ' + (e.message || 'حاول مرة أخرى');
+            errEl.style.display = 'block';
             this.disabled = false;
             this.textContent = 'تسجيل الدخول بحساب Google';
         }
     };
 
-    // تسجيل الخروج
     document.getElementById('logoutBtn').onclick = function() {
         auth.signOut();
     };
 
-    // زر شحن رصيد
     document.getElementById('chargeBalanceBtn').onclick = function() {
         const code = userData?.walletCode || userData?.userCode || '';
         const msg = 'السلام عليكم اريد شحن رصيد - كود المحفظة: ' + code;
         window.open('https://wa.me/' + CONFIG.adminWhatsApp + '?text=' + encodeURIComponent(msg), '_blank');
     };
 
-    // زر نشر فرصة عمل
     document.getElementById('quickPublishJob').onclick = function() {
         window.open('https://wa.me/' + CONFIG.adminWhatsApp + '?text=' + encodeURIComponent('السلام عليكم اريد نشر فرصة عمل'), '_blank');
     };
 
-    // زر نشر خبر
     document.getElementById('quickPublishNews').onclick = function() {
         window.open('https://wa.me/' + CONFIG.adminWhatsApp + '?text=' + encodeURIComponent('السلام عليكم اريد نشر خبر'), '_blank');
     };
 
-    // نسخ كود المحفظة
     document.getElementById('profileCode').onclick = function() {
         const code = this.textContent;
         if (code && code !== '------') {
@@ -690,9 +695,6 @@
         }
     };
 
-    // ==========================================
-    // التنقل بين الأقسام
-    // ==========================================
     document.querySelectorAll('.nav-btn').forEach(function(btn) {
         btn.onclick = function() {
             var section = this.getAttribute('data-section');
@@ -718,9 +720,6 @@
         };
     });
 
-    // ==========================================
-    // تحميل المنشورات
-    // ==========================================
     function loadPosts(section, loadMore) {
         var state = loadStates[section];
         if (state.loading) return;
@@ -794,13 +793,12 @@
             state.loading = false;
             loaderEl.style.display = 'none';
         }).catch(function(e) {
-            console.error('خطأ:', e);
+            console.error('❌ خطأ loadPosts:', e);
             state.loading = false;
             loaderEl.style.display = 'none';
         });
     }
 
-    // أزرار تحميل المزيد
     document.getElementById('loadMoreBtnJobs').onclick = function() { loadPosts('jobs', true); };
     document.getElementById('loadMoreBtnRealestate').onclick = function() { loadPosts('realestate', true); };
     document.getElementById('loadMoreBtnNews').onclick = function() { loadPosts('news', true); };
@@ -1020,7 +1018,6 @@
         updateInstallBtn();
     });
 
-    // تحديث زر التثبيت عند التحميل
     updateInstallBtn();
     </script>
 </body>
