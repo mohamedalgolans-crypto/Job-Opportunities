@@ -1,5 +1,6 @@
-// Service Worker - نسخة آمنة
+// Service Worker - نسخة آمنة (v2)
 // لا يعترض طلبات Firebase Auth
+// GitHub Pages Compatible
 
 const CACHE_NAME = 'fa-app-v2';
 
@@ -24,7 +25,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = event.request.url;
 
-  // ✅ لا تعترض هذه الطلبات (مهمة جداً!)
+  // ✅ لا تعترض هذه الطلبات المهمة
   if (
     url.includes('firebase') ||
     url.includes('googleapis') ||
@@ -32,6 +33,7 @@ self.addEventListener('fetch', (event) => {
     url.includes('google.com') ||
     url.includes('accounts.google') ||
     url.includes('identitytoolkit') ||
+    url.includes('firebaseapp.com') ||
     event.request.method !== 'GET'
   ) {
     return; // اترك المتصفح يتعامل معها مباشرة
