@@ -6,6 +6,12 @@
     <meta name="theme-color" content="#1a237e">
     <title>فرص عمل | عقارات | أخبار</title>
     
+    <!-- ⚡ تحسين السرعة: preconnect لـ Firebase -->
+    <link rel="preconnect" href="https://www.gstatic.com">
+    <link rel="preconnect" href="https://firestore.googleapis.com">
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com">
+    <link rel="dns-prefetch" href="https://farsaml.firebaseapp.com">
+    
     <link rel="manifest" href="manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -91,7 +97,7 @@
         }
 
         .google-btn:hover { background: #f5f5f5; border-color: var(--navy); }
-        .google-btn:disabled { opacity: 0.6; }
+        .google-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
         .main-app {
             display: none;
@@ -146,6 +152,8 @@
             padding: 16px;
             margin-bottom: 16px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            content-visibility: auto;
+            contain-intrinsic-size: 200px;
         }
 
         .post-header {
@@ -532,8 +540,7 @@
 
     <script>
     // ==========================================
-    // إلغاء تسجيل أي Service Worker قديم + مسح الكاش
-    // (يجب أن يكون أول شيء قبل أي كود آخر)
+    // إلغاء Service Worker قديم + مسح الكاش
     // ==========================================
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(function(registrations) {
@@ -566,7 +573,7 @@
     const db = firebase.firestore();
 
     const CONFIG = {
-        adminWhatsApp: "963939286382",
+        adminWhatsApp: "963934969847",
         postsPerPage: 10,
         dailyAdCost: 10,
         realEstatePostCost: 5
@@ -581,6 +588,9 @@
         news: { lastDoc: null, hasMore: true, loading: false }
     };
 
+    // ⚡ cache للصور المرفوعة (توفير إعادة القراءة)
+    const imageCache = new Map();
+
     function showToast(message, type) {
         const toast = document.createElement('div');
         toast.className = 'toast ' + (type === 'success' ? 'toast-success' : 'toast-error');
@@ -590,11 +600,24 @@
     }
 
     // ==========================================
-    // المصادقة — مع كود تشخيص
+    // حماية من النقر المتكرر (Debounce)
+    // ==========================================
+    function debounce(fn, wait) {
+        let t;
+        return function() {
+            const args = arguments;
+            const ctx = this;
+            if (t) return;
+            t = setTimeout(function() { t = null; }, wait);
+            return fn.apply(ctx, args);
+        };
+    }
+
+    // ==========================================
+    // المصادقة
     // ==========================================
     auth.onAuthStateChanged(async (user) => {
         if (user) {
-            console.log('✅ onAuthStateChanged: مستخدم مسجل', user.email);
             currentUser = user;
             document.getElementById('loadingScreen').style.display = 'none';
             document.getElementById('loginScreen').style.display = 'none';
@@ -617,23 +640,21 @@
                         isFrozen: false,
                         lastLogin: new Date().toISOString()
                     });
+                    userData = { name: user.displayName, walletCode: code, balance: 0 };
                 } else {
-                    await userRef.update({ lastLogin: new Date().toISOString() }).catch(() => {});
+                    userData = snap.data();
+                    userRef.update({ lastLogin: new Date().toISOString() }).catch(function(){});
                 }
-
-                const data = (await userRef.get()).data();
-                userData = data;
                 
-                document.getElementById('profileName').textContent = data.name || '';
-                document.getElementById('profileCode').textContent = data.walletCode || data.userCode || '------';
-                document.getElementById('profileBalance').textContent = data.balance || 0;
+                document.getElementById('profileName').textContent = userData.name || '';
+                document.getElementById('profileCode').textContent = userData.walletCode || userData.userCode || '------';
+                document.getElementById('profileBalance').textContent = userData.balance || 0;
                 
                 loadPosts('jobs');
             } catch (e) {
                 console.error('❌ خطأ Firestore:', e);
             }
         } else {
-            console.log('ℹ️ onAuthStateChanged: لا يوجد مستخدم');
             document.getElementById('loadingScreen').style.display = 'none';
             document.getElementById('loginScreen').style.display = 'flex';
             document.getElementById('mainApp').style.display = 'none';
@@ -641,7 +662,7 @@
     });
 
     // ==========================================
-    // تسجيل الدخول — مع كود تشخيص موسّع
+    // تسجيل الدخول - Popup للكمبيوتر / Redirect للجوال
     // ==========================================
     document.getElementById('googleLoginBtn').onclick = async function() {
         this.disabled = true;
@@ -651,14 +672,18 @@
         errEl.style.display = 'none';
         
         try {
-            console.log('🔵 بدء signInWithPopup...');
             const provider = new firebase.auth.GoogleAuthProvider();
             provider.setCustomParameters({ prompt: 'select_account' });
-            const result = await auth.signInWithPopup(provider);
-            console.log('✅ نجح الدخول:', result.user.email);
-            // onAuthStateChanged سيتولى الباقي
+            
+            const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+            
+            if (isMobile) {
+                await auth.signInWithRedirect(provider);
+            } else {
+                const result = await auth.signInWithPopup(provider);
+                console.log('✅ نجح الدخول:', result.user.email);
+            }
         } catch (e) {
-            console.error('❌ فشل تسجيل الدخول:', e.code, e.message);
             errEl.textContent = '❌ ' + (e.code || '') + ' — ' + (e.message || 'حاول مرة أخرى');
             errEl.style.display = 'block';
             this.disabled = false;
@@ -666,6 +691,27 @@
         }
     };
 
+    // معالجة نتيجة Redirect
+    auth.getRedirectResult().then(function(result) {
+        if (result && result.user) {
+            console.log('✅ عاد من Redirect:', result.user.email);
+        }
+    }).catch(function(e) {
+        const errEl = document.getElementById('loginError');
+        if (errEl && e.code) {
+            errEl.textContent = '❌ ' + (e.code || '') + ' — ' + (e.message || '');
+            errEl.style.display = 'block';
+        }
+        const btn = document.getElementById('googleLoginBtn');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'تسجيل الدخول بحساب Google';
+        }
+    });
+
+    // ==========================================
+    // الأزرار الرئيسية
+    // ==========================================
     document.getElementById('logoutBtn').onclick = function() {
         auth.signOut();
     };
@@ -695,6 +741,9 @@
         }
     };
 
+    // ==========================================
+    // التنقل بين الأقسام
+    // ==========================================
     document.querySelectorAll('.nav-btn').forEach(function(btn) {
         btn.onclick = function() {
             var section = this.getAttribute('data-section');
@@ -720,6 +769,9 @@
         };
     });
 
+    // ==========================================
+    // تحميل المنشورات
+    // ==========================================
     function loadPosts(section, loadMore) {
         var state = loadStates[section];
         if (state.loading) return;
@@ -757,6 +809,9 @@
                 btnEl.style.display = 'none';
             }
 
+            // ⚡ استخدام DocumentFragment (أسرع في الإضافة)
+            var fragment = document.createDocumentFragment();
+            
             posts.forEach(function(item) {
                 var post = item.docData;
                 var card = document.createElement('div');
@@ -764,7 +819,7 @@
                 
                 var mediaHTML = '';
                 if (post.imageUrl && post.imageUrl.indexOf('data:image') === 0) {
-                    mediaHTML = '<div class="post-media"><img src="' + post.imageUrl + '" alt="صورة"></div>';
+                    mediaHTML = '<div class="post-media"><img loading="lazy" src="' + post.imageUrl + '" alt="صورة"></div>';
                 }
                 
                 var contactBtn = '';
@@ -783,8 +838,10 @@
                     (post.location ? '<div class="post-location">📍 ' + post.location + '</div>' : '') +
                     '<div class="post-footer">' + contactBtn + '</div>';
                 
-                container.appendChild(card);
+                fragment.appendChild(card);
             });
+            
+            container.appendChild(fragment);
 
             state.lastDoc = snapshot.docs[snapshot.docs.length - 1] || null;
             state.hasMore = snapshot.docs.length === CONFIG.postsPerPage;
@@ -799,9 +856,10 @@
         });
     }
 
-    document.getElementById('loadMoreBtnJobs').onclick = function() { loadPosts('jobs', true); };
-    document.getElementById('loadMoreBtnRealestate').onclick = function() { loadPosts('realestate', true); };
-    document.getElementById('loadMoreBtnNews').onclick = function() { loadPosts('news', true); };
+    // ⚡ منع تكرار النقرات (debounce)
+    document.getElementById('loadMoreBtnJobs').onclick = debounce(function() { loadPosts('jobs', true); }, 800);
+    document.getElementById('loadMoreBtnRealestate').onclick = debounce(function() { loadPosts('realestate', true); }, 800);
+    document.getElementById('loadMoreBtnNews').onclick = debounce(function() { loadPosts('news', true); }, 800);
 
     // ==========================================
     // نشر إعلان ممول
@@ -1019,6 +1077,12 @@
     });
 
     updateInstallBtn();
+
+    // ==========================================
+    // فرض رقم الواتساب الجديد
+    // ==========================================
+    CONFIG.adminWhatsApp = "963934969847";
+    window.CONFIG = CONFIG;
     </script>
 </body>
 </html>
