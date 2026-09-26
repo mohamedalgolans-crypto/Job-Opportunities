@@ -6,7 +6,6 @@
     <meta name="theme-color" content="#1a237e">
     <title>فرص عمل | عقارات | أخبار</title>
     
-    <!-- ⚡ تحسين السرعة: preconnect لـ Firebase -->
     <link rel="preconnect" href="https://www.gstatic.com">
     <link rel="preconnect" href="https://firestore.googleapis.com">
     <link rel="preconnect" href="https://identitytoolkit.googleapis.com">
@@ -588,7 +587,6 @@
         news: { lastDoc: null, hasMore: true, loading: false }
     };
 
-    // ⚡ cache للصور المرفوعة (توفير إعادة القراءة)
     const imageCache = new Map();
 
     function showToast(message, type) {
@@ -599,9 +597,6 @@
         setTimeout(() => toast.remove(), 3000);
     }
 
-    // ==========================================
-    // حماية من النقر المتكرر (Debounce)
-    // ==========================================
     function debounce(fn, wait) {
         let t;
         return function() {
@@ -662,7 +657,7 @@
     });
 
     // ==========================================
-    // تسجيل الدخول - Popup للكمبيوتر / Redirect للجوال
+    // تسجيل الدخول - Popup دائماً مع Redirect احتياطي
     // ==========================================
     document.getElementById('googleLoginBtn').onclick = async function() {
         this.disabled = true;
@@ -675,15 +670,30 @@
             const provider = new firebase.auth.GoogleAuthProvider();
             provider.setCustomParameters({ prompt: 'select_account' });
             
-            const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+            // ✅ نستخدم Popup دائماً (يعمل مع معظم المتصفحات)
+            const result = await auth.signInWithPopup(provider);
+            console.log('✅ نجح الدخول:', result.user.email);
             
-            if (isMobile) {
-                await auth.signInWithRedirect(provider);
-            } else {
-                const result = await auth.signInWithPopup(provider);
-                console.log('✅ نجح الدخول:', result.user.email);
-            }
         } catch (e) {
+            console.error('❌ فشل Popup:', e.code, e.message);
+            
+            // 🔄 إذا فشل Popup → جرب Redirect تلقائياً
+            if (e.code === 'auth/popup-blocked' || 
+                e.code === 'auth/popup-closed-by-user' || 
+                e.code === 'auth/cancelled-popup-request' ||
+                e.code === 'auth/operation-not-supported-in-this-environment') {
+                
+                console.log('🔄 Popup فشل، جرب Redirect...');
+                try {
+                    const provider2 = new firebase.auth.GoogleAuthProvider();
+                    provider2.setCustomParameters({ prompt: 'select_account' });
+                    await auth.signInWithRedirect(provider2);
+                    return; // سيتحول للصفحة
+                } catch (e2) {
+                    console.error('❌ Redirect فشل:', e2);
+                }
+            }
+            
             errEl.textContent = '❌ ' + (e.code || '') + ' — ' + (e.message || 'حاول مرة أخرى');
             errEl.style.display = 'block';
             this.disabled = false;
@@ -691,21 +701,24 @@
         }
     };
 
-    // معالجة نتيجة Redirect
+    // معالجة نتيجة Redirect (إذا استُخدم)
     auth.getRedirectResult().then(function(result) {
         if (result && result.user) {
             console.log('✅ عاد من Redirect:', result.user.email);
         }
     }).catch(function(e) {
-        const errEl = document.getElementById('loginError');
-        if (errEl && e.code) {
-            errEl.textContent = '❌ ' + (e.code || '') + ' — ' + (e.message || '');
-            errEl.style.display = 'block';
-        }
-        const btn = document.getElementById('googleLoginBtn');
-        if (btn) {
-            btn.disabled = false;
-            btn.textContent = 'تسجيل الدخول بحساب Google';
+        console.error('❌ خطأ Redirect:', e.code, e.message);
+        if (e.code) {
+            const errEl = document.getElementById('loginError');
+            if (errEl) {
+                errEl.textContent = '❌ ' + (e.code || '') + ' — ' + (e.message || '');
+                errEl.style.display = 'block';
+            }
+            const btn = document.getElementById('googleLoginBtn');
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'تسجيل الدخول بحساب Google';
+            }
         }
     });
 
@@ -809,7 +822,6 @@
                 btnEl.style.display = 'none';
             }
 
-            // ⚡ استخدام DocumentFragment (أسرع في الإضافة)
             var fragment = document.createDocumentFragment();
             
             posts.forEach(function(item) {
@@ -856,7 +868,6 @@
         });
     }
 
-    // ⚡ منع تكرار النقرات (debounce)
     document.getElementById('loadMoreBtnJobs').onclick = debounce(function() { loadPosts('jobs', true); }, 800);
     document.getElementById('loadMoreBtnRealestate').onclick = debounce(function() { loadPosts('realestate', true); }, 800);
     document.getElementById('loadMoreBtnNews').onclick = debounce(function() { loadPosts('news', true); }, 800);
@@ -1078,9 +1089,6 @@
 
     updateInstallBtn();
 
-    // ==========================================
-    // فرض رقم الواتساب الجديد
-    // ==========================================
     CONFIG.adminWhatsApp = "963934969847";
     window.CONFIG = CONFIG;
     </script>
