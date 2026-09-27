@@ -609,6 +609,69 @@
     }
 
     // ==========================================
+    // ✅ ضغط الصور قبل الإرسال (لتوفير حجم Firestore)
+    // ==========================================
+    function compressImage(file) {
+        return new Promise(function(resolve) {
+            // إذا الصورة صغيرة (أقل من 500 كيلوبايت) → لا تضغط
+            if (file.size < 500 * 1024) {
+                var reader = new FileReader();
+                reader.onload = function() { resolve(reader.result); };
+                reader.readAsDataURL(file);
+                return;
+            }
+
+            // ضغط الصورة
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var img = new Image();
+                img.onload = function() {
+                    var canvas = document.createElement('canvas');
+                    var ctx = canvas.getContext('2d');
+                    
+                    var MAX_WIDTH = 1200;
+                    var MAX_HEIGHT = 1200;
+                    var width = img.width;
+                    var height = img.height;
+
+                    if (width > height) {
+                        if (width > MAX_WIDTH) {
+                            height = Math.round((height * MAX_WIDTH) / width);
+                            width = MAX_WIDTH;
+                        }
+                    } else {
+                        if (height > MAX_HEIGHT) {
+                            width = Math.round((width * MAX_HEIGHT) / height);
+                            height = MAX_HEIGHT;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    var compressed = canvas.toDataURL('image/jpeg', 0.7);
+                    
+                    console.log('📸 الأصلي:', Math.round(file.size / 1024), 'KB | بعد الضغط:', Math.round(compressed.length / 1024), 'KB');
+                    
+                    // إذا بعد الضغط ما زالت كبيرة → ضغط أكثر
+                    if (compressed.length > 900 * 1024) {
+                        compressed = canvas.toDataURL('image/jpeg', 0.5);
+                        console.log('📸 ضغط إضافي:', Math.round(compressed.length / 1024), 'KB');
+                    }
+                    
+                    resolve(compressed);
+                };
+                img.onerror = function() {
+                    resolve(e.target.result);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // ==========================================
     // المصادقة
     // ==========================================
     auth.onAuthStateChanged(async (user) => {
@@ -670,14 +733,12 @@
             const provider = new firebase.auth.GoogleAuthProvider();
             provider.setCustomParameters({ prompt: 'select_account' });
             
-            // ✅ نستخدم Popup دائماً (يعمل مع معظم المتصفحات)
             const result = await auth.signInWithPopup(provider);
             console.log('✅ نجح الدخول:', result.user.email);
             
         } catch (e) {
             console.error('❌ فشل Popup:', e.code, e.message);
             
-            // 🔄 إذا فشل Popup → جرب Redirect تلقائياً
             if (e.code === 'auth/popup-blocked' || 
                 e.code === 'auth/popup-closed-by-user' || 
                 e.code === 'auth/cancelled-popup-request' ||
@@ -688,7 +749,7 @@
                     const provider2 = new firebase.auth.GoogleAuthProvider();
                     provider2.setCustomParameters({ prompt: 'select_account' });
                     await auth.signInWithRedirect(provider2);
-                    return; // سيتحول للصفحة
+                    return;
                 } catch (e2) {
                     console.error('❌ Redirect فشل:', e2);
                 }
@@ -701,7 +762,6 @@
         }
     };
 
-    // معالجة نتيجة Redirect (إذا استُخدم)
     auth.getRedirectResult().then(function(result) {
         if (result && result.user) {
             console.log('✅ عاد من Redirect:', result.user.email);
@@ -918,11 +978,7 @@
             var imagePromise = Promise.resolve(null);
             
             if (imageFile) {
-                imagePromise = new Promise(function(resolve) {
-                    var reader = new FileReader();
-                    reader.onload = function() { resolve(reader.result); };
-                    reader.readAsDataURL(imageFile);
-                });
+                imagePromise = compressImage(imageFile);
             }
 
             imagePromise.then(function(imageBase64) {
@@ -999,11 +1055,7 @@
             var imagePromise = Promise.resolve(null);
             
             if (imageFile) {
-                imagePromise = new Promise(function(resolve) {
-                    var reader = new FileReader();
-                    reader.onload = function() { resolve(reader.result); };
-                    reader.readAsDataURL(imageFile);
-                });
+                imagePromise = compressImage(imageFile);
             }
 
             imagePromise.then(function(imageBase64) {
