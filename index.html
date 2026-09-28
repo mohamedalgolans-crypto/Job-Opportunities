@@ -26,6 +26,7 @@
             --gray: #9e9e9e;
             --danger: #f44336;
             --success: #4caf50;
+            --orange: #ff9800;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -204,6 +205,76 @@
             text-decoration: none;
             font-size: 14px;
             display: inline-block;
+        }
+
+        /* 🎯 بطاقة الإعلان الممول */
+        .ad-card {
+            background: linear-gradient(135deg, #fff8e1, #fff3c4);
+            border: 2px solid var(--yellow);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 10px rgba(255,193,7,0.3);
+            position: relative;
+            content-visibility: auto;
+            contain-intrinsic-size: 200px;
+        }
+
+        .ad-card::before {
+            content: '📊 إعلان ممول';
+            position: absolute;
+            top: -12px;
+            right: 16px;
+            background: var(--yellow);
+            color: var(--black);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        }
+
+        .ad-card .post-header h3 {
+            color: var(--navy);
+            font-size: 18px;
+            margin-top: 8px;
+        }
+
+        .ad-card .ad-owner {
+            color: var(--navy);
+            font-size: 13px;
+            margin: 8px 0;
+            opacity: 0.7;
+        }
+
+        .ad-card .ad-buttons {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        .ad-card .ad-btn {
+            flex: 1;
+            min-width: 100px;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            text-align: center;
+            text-decoration: none;
+            font-size: 14px;
+            border: none;
+        }
+
+        .ad-btn-whatsapp {
+            background: var(--success);
+            color: white;
+        }
+
+        .ad-btn-link {
+            background: var(--navy);
+            color: white;
         }
 
         .post-date { color: var(--gray); font-size: 12px; }
@@ -451,6 +522,7 @@
 
         @media (max-width: 600px) {
             .post-card { padding: 12px; }
+            .ad-card { padding: 12px; }
             .modal-content { padding: 20px; margin: 10px; }
             .nav-btn { font-size: 10px; }
             .nav-btn .nav-icon { font-size: 20px; }
@@ -575,19 +647,28 @@
         adminWhatsApp: "963934969847",
         postsPerPage: 10,
         dailyAdCost: 10,
-        realEstatePostCost: 5
+        realEstatePostCost: 5,
+        adsPerPost: 10
     };
 
     let currentUser = null;
     let userData = null;
     let currentSection = 'jobs';
     let loadStates = {
-        jobs: { lastDoc: null, hasMore: true, loading: false },
-        realestate: { lastDoc: null, hasMore: true, loading: false },
-        news: { lastDoc: null, hasMore: true, loading: false }
+        jobs: { lastDoc: null, hasMore: true, loading: false, postCount: 0, adIndex: 0 },
+        realestate: { lastDoc: null, hasMore: true, loading: false, postCount: 0, adIndex: 0 },
+        news: { lastDoc: null, hasMore: true, loading: false, postCount: 0, adIndex: 0 }
     };
 
+    // Cache للصور المرفوعة
     const imageCache = new Map();
+
+    // Cache للإعلانات لكل قسم
+    const adsCache = {
+        jobs: { ads: [], loaded: false },
+        realestate: { ads: [], loaded: false },
+        news: { ads: [], loaded: false }
+    };
 
     function showToast(message, type) {
         const toast = document.createElement('div');
@@ -604,16 +685,15 @@
             const ctx = this;
             if (t) return;
             t = setTimeout(function() { t = null; }, wait);
-            return fn.apply(ctx, args);
+            return fn.apply(ctx, ctx);
         };
     }
 
     // ==========================================
-    // ✅ ضغط الصور قبل الإرسال (لتوفير حجم Firestore)
+    // ضغط الصور
     // ==========================================
     function compressImage(file) {
         return new Promise(function(resolve) {
-            // إذا الصورة صغيرة (أقل من 500 كيلوبايت) → لا تضغط
             if (file.size < 500 * 1024) {
                 var reader = new FileReader();
                 reader.onload = function() { resolve(reader.result); };
@@ -621,7 +701,6 @@
                 return;
             }
 
-            // ضغط الصورة
             var reader = new FileReader();
             reader.onload = function(e) {
                 var img = new Image();
@@ -652,12 +731,8 @@
 
                     var compressed = canvas.toDataURL('image/jpeg', 0.7);
                     
-                    console.log('📸 الأصلي:', Math.round(file.size / 1024), 'KB | بعد الضغط:', Math.round(compressed.length / 1024), 'KB');
-                    
-                    // إذا بعد الضغط ما زالت كبيرة → ضغط أكثر
                     if (compressed.length > 900 * 1024) {
                         compressed = canvas.toDataURL('image/jpeg', 0.5);
-                        console.log('📸 ضغط إضافي:', Math.round(compressed.length / 1024), 'KB');
                     }
                     
                     resolve(compressed);
@@ -669,6 +744,105 @@
             };
             reader.readAsDataURL(file);
         });
+    }
+
+    // ==========================================
+    // تحميل إعلانات قسم معين
+    // ==========================================
+    function loadAdsForSection(section) {
+        var cache = adsCache[section];
+        if (cache.loaded) return Promise.resolve(cache.ads);
+
+        var now = new Date().toISOString();
+        
+        return db.collection('ads')
+            .where('status', '==', 'approved')
+            .get()
+            .then(function(snapshot) {
+                var ads = [];
+                snapshot.forEach(function(doc) {
+                    var ad = doc.data();
+                    ad.id = doc.id;
+                    
+                    // تحقق من انتهاء المدة
+                    var expiresAt = ad.expiresAt;
+                    if (!expiresAt && ad.approvedAt && ad.durationDays) {
+                        var approval = new Date(ad.approvedAt);
+                        approval.setDate(approval.getDate() + parseInt(ad.durationDays));
+                        expiresAt = approval.toISOString();
+                    }
+                    
+                    // إذا انتهى الإعلان → تجاهله
+                    if (expiresAt && expiresAt < now) return;
+                    
+                    // فلترة حسب القسم (إذا ما فيه section → يظهر في كل الأقسام)
+                    if (ad.section && ad.section !== section) return;
+                    
+                    // إذا لم يُخصم الرصيد بعد → خصمه الآن
+                    if (ad.deducted === false && ad.userId && ad.cost) {
+                        db.collection('users').doc(ad.userId).update({
+                            balance: firebase.firestore.FieldValue.increment(-parseInt(ad.cost))
+                        }).then(function() {
+                            db.collection('ads').doc(ad.id).update({
+                                deducted: true,
+                                deductedAt: new Date().toISOString(),
+                                expiresAt: expiresAt || null
+                            });
+                        }).catch(function(err) {
+                            console.error('فشل الخصم:', err);
+                        });
+                    } else if (!expiresAt && ad.approvedAt) {
+                        // تحديث expiresAt إن لم يكن موجود
+                        db.collection('ads').doc(ad.id).update({
+                            expiresAt: expiresAt
+                        }).catch(function() {});
+                    }
+                    
+                    ads.push(ad);
+                });
+                
+                cache.ads = ads;
+                cache.loaded = true;
+                return ads;
+            })
+            .catch(function(e) {
+                console.error('❌ خطأ تحميل الإعلانات:', e);
+                cache.loaded = true;
+                return [];
+            });
+    }
+
+    // ==========================================
+    // إنشاء بطاقة إعلان
+    // ==========================================
+    function createAdCard(ad) {
+        var card = document.createElement('div');
+        card.className = 'ad-card';
+        
+        var mediaHTML = '';
+        if (ad.imageUrl && ad.imageUrl.indexOf('data:image') === 0) {
+            mediaHTML = '<div class="post-media"><img loading="lazy" src="' + ad.imageUrl + '" alt="إعلان"></div>';
+        }
+        
+        var ownerHTML = ad.ownerName ? '<div class="ad-owner">👤 ' + ad.ownerName + '</div>' : '';
+        
+        var buttonsHTML = '<div class="ad-buttons">';
+        if (ad.phone) {
+            var phoneClean = String(ad.phone).replace(/[^0-9]/g, '');
+            buttonsHTML += '<a href="https://wa.me/' + phoneClean + '" target="_blank" class="ad-btn ad-btn-whatsapp">💬 واتساب</a>';
+        }
+        if (ad.redirectUrl) {
+            buttonsHTML += '<a href="' + ad.redirectUrl + '" target="_blank" class="ad-btn ad-btn-link">🔗 زيارة</a>';
+        }
+        buttonsHTML += '</div>';
+        
+        card.innerHTML = 
+            (ad.description ? '<div class="post-description">' + ad.description + '</div>' : '') +
+            mediaHTML +
+            ownerHTML +
+            buttonsHTML;
+        
+        return card;
     }
 
     // ==========================================
@@ -720,7 +894,7 @@
     });
 
     // ==========================================
-    // تسجيل الدخول - Popup دائماً مع Redirect احتياطي
+    // تسجيل الدخول
     // ==========================================
     document.getElementById('googleLoginBtn').onclick = async function() {
         this.disabled = true;
@@ -744,7 +918,6 @@
                 e.code === 'auth/cancelled-popup-request' ||
                 e.code === 'auth/operation-not-supported-in-this-environment') {
                 
-                console.log('🔄 Popup فشل، جرب Redirect...');
                 try {
                     const provider2 = new firebase.auth.GoogleAuthProvider();
                     provider2.setCustomParameters({ prompt: 'select_account' });
@@ -843,14 +1016,14 @@
     });
 
     // ==========================================
-    // تحميل المنشورات
+    // تحميل المنشورات + الإعلانات
     // ==========================================
     function loadPosts(section, loadMore) {
         var state = loadStates[section];
         if (state.loading) return;
         state.loading = true;
         
-        var colMap = { jobs: 'jobPosts', realestate: 'realEstatePosts', news: 'newsPosts' };
+        var colMap = { jobs: 'jobs', realestate: 'realestate', news: 'news' };
         var loaderMap = { jobs: 'loaderJobs', realestate: 'loaderRealestate', news: 'loaderNews' };
         var btnMap = { jobs: 'loadMoreBtnJobs', realestate: 'loadMoreBtnRealestate', news: 'loadMoreBtnNews' };
         
@@ -861,30 +1034,46 @@
 
         if (loadMore) loaderEl.style.display = 'block';
         
-        var q = db.collection(collectionName)
-            .orderBy('createdAt', 'desc')
-            .limit(CONFIG.postsPerPage);
+        // نحمّل الإعلانات + المنشورات معاً
+        Promise.all([
+            loadAdsForSection(section),
+            (function() {
+                var q = db.collection(collectionName)
+                    .orderBy('createdAt', 'desc')
+                    .limit(CONFIG.postsPerPage);
 
-        if (loadMore && state.lastDoc) {
-            q = q.startAfter(state.lastDoc);
-        }
-
-        q.get().then(function(snapshot) {
+                if (loadMore && state.lastDoc) {
+                    q = q.startAfter(state.lastDoc);
+                }
+                return q.get();
+            })()
+        ]).then(function(results) {
+            var ads = results[0];
+            var snapshot = results[1];
+            
             var posts = [];
             snapshot.forEach(function(doc) {
                 posts.push({ id: doc.id, docData: doc.data() });
             });
 
-            if (!loadMore) container.innerHTML = '';
+            if (!loadMore) {
+                container.innerHTML = '';
+                state.postCount = 0;
+                state.adIndex = 0;
+            }
             
             if (posts.length === 0 && !loadMore) {
                 container.innerHTML = '<p style="text-align:center;padding:40px;color:#999;">لا توجد منشورات حالياً</p>';
                 btnEl.style.display = 'none';
+                state.loading = false;
+                loaderEl.style.display = 'none';
+                return;
             }
 
             var fragment = document.createDocumentFragment();
             
-            posts.forEach(function(item) {
+            posts.forEach(function(item, idx) {
+                // أضف المنشور
                 var post = item.docData;
                 var card = document.createElement('div');
                 card.className = 'post-card';
@@ -911,6 +1100,15 @@
                     '<div class="post-footer">' + contactBtn + '</div>';
                 
                 fragment.appendChild(card);
+                state.postCount++;
+                
+                // 🎯 بعد كل 10 منشورات، أضف إعلاناً (إذا توجد إعلانات)
+                if (state.postCount % CONFIG.adsPerPost === 0 && ads.length > 0) {
+                    var ad = ads[state.adIndex % ads.length];
+                    var adCard = createAdCard(ad);
+                    fragment.appendChild(adCard);
+                    state.adIndex++;
+                }
             });
             
             container.appendChild(fragment);
@@ -945,12 +1143,19 @@
                 '<input type="tel" id="adPhone" placeholder="رقم الهاتف">' +
                 '<input type="url" id="adRedirectUrl" placeholder="رابط التوجيه">' +
                 '<textarea id="adDescription" placeholder="وصف الإعلان" rows="3"></textarea>' +
+                '<label>📍 اختر القسم:</label>' +
+                '<select id="adSection">' +
+                    '<option value="jobs">📢 فرص عمل</option>' +
+                    '<option value="realestate">🏠 عقارات</option>' +
+                    '<option value="news">📰 أخبار</option>' +
+                '</select>' +
                 '<label>صورة (اختياري):</label>' +
                 '<input type="file" id="adImage" accept="image/*">' +
+                '<label>المدة (بالأيام):</label>' +
                 '<input type="number" id="adDuration" placeholder="عدد الأيام" min="1" value="1">' +
                 '<div class="cost-info">التكلفة: <span id="adCost">10</span> رصيد</div>' +
                 '<div class="form-buttons">' +
-                    '<button class="btn-primary" id="submitAdBtn">نشر</button>' +
+                    '<button class="btn-primary" id="submitAdBtn">إرسال للمراجعة</button>' +
                     '<button class="btn-secondary" id="cancelAdBtn">إلغاء</button>' +
                 '</div>' +
             '</div>';
@@ -966,6 +1171,7 @@
             var days = parseInt(document.getElementById('adDuration').value) || 0;
             var cost = days * CONFIG.dailyAdCost;
             
+            // فحص الرصيد (بدون خصم)
             if ((userData?.balance || 0) < cost) {
                 showToast('رصيد غير كافي', 'error');
                 return;
@@ -982,31 +1188,29 @@
             }
 
             imagePromise.then(function(imageBase64) {
-                return db.collection('users').doc(currentUser.uid).update({
-                    balance: firebase.firestore.FieldValue.increment(-cost)
-                }).then(function() {
-                    return db.collection('ads').add({
-                        ownerName: document.getElementById('adOwnerName').value || '',
-                        phone: document.getElementById('adPhone').value || '',
-                        redirectUrl: document.getElementById('adRedirectUrl').value || '',
-                        description: document.getElementById('adDescription').value || '',
-                        imageUrl: imageBase64 || '',
-                        durationDays: days,
-                        cost: cost,
-                        userId: currentUser.uid,
-                        status: 'pending',
-                        approved: false,
-                        publishedBy: 'user',
-                        createdAt: new Date().toISOString()
-                    });
+                return db.collection('ads').add({
+                    ownerName: document.getElementById('adOwnerName').value || '',
+                    phone: document.getElementById('adPhone').value || '',
+                    redirectUrl: document.getElementById('adRedirectUrl').value || '',
+                    description: document.getElementById('adDescription').value || '',
+                    section: document.getElementById('adSection').value,
+                    imageUrl: imageBase64 || '',
+                    durationDays: days,
+                    cost: cost,
+                    userId: currentUser.uid,
+                    status: 'pending',
+                    approved: false,
+                    deducted: false,
+                    publishedBy: 'user',
+                    createdAt: new Date().toISOString()
                 });
             }).then(function() {
                 modal.remove();
-                return db.collection('users').doc(currentUser.uid).get();
-            }).then(function(snap) {
-                userData = snap.data();
-                document.getElementById('profileBalance').textContent = userData.balance || 0;
-                showToast('تم الإرسال للمراجعة', 'success');
+                // مسح كاش الإعلانات
+                adsCache.jobs.loaded = false;
+                adsCache.realestate.loaded = false;
+                adsCache.news.loaded = false;
+                showToast('تم الإرسال للمراجعة ✅ سيُخصم الرصيد بعد الموافقة', 'success');
             }).catch(function(e) {
                 showToast('خطأ: ' + e.message, 'error');
             });
@@ -1037,9 +1241,9 @@
                 '<textarea id="reDescription" placeholder="وصف العقار" rows="3"></textarea>' +
                 '<label>صورة (اختياري):</label>' +
                 '<input type="file" id="reImage" accept="image/*">' +
-                '<div class="cost-info">تكلفة النشر: ' + cost + ' رصيد</div>' +
+                '<div class="cost-info">تكلفة النشر: ' + cost + ' رصيد (بعد الموافقة)</div>' +
                 '<div class="form-buttons">' +
-                    '<button class="btn-primary" id="submitREBtn">نشر</button>' +
+                    '<button class="btn-primary" id="submitREBtn">إرسال للمراجعة</button>' +
                     '<button class="btn-secondary" id="cancelREBtn">إلغاء</button>' +
                 '</div>' +
             '</div>';
@@ -1059,31 +1263,26 @@
             }
 
             imagePromise.then(function(imageBase64) {
-                return db.collection('users').doc(currentUser.uid).update({
-                    balance: firebase.firestore.FieldValue.increment(-cost)
-                }).then(function() {
-                    return db.collection('realEstatePosts').add({
-                        title: document.getElementById('reTitle').value || '',
-                        type: document.getElementById('reType').value,
-                        location: document.getElementById('reLocation').value || '',
-                        price: document.getElementById('rePrice').value || '',
-                        contactWhatsApp: document.getElementById('reContactWhatsApp').value || '',
-                        description: document.getElementById('reDescription').value || '',
-                        imageUrl: imageBase64 || '',
-                        userId: currentUser.uid,
-                        status: 'pending',
-                        approved: false,
-                        publishedBy: 'user',
-                        createdAt: new Date().toISOString()
-                    });
+                return db.collection('realestate').add({
+                    title: document.getElementById('reTitle').value || '',
+                    type: document.getElementById('reType').value,
+                    location: document.getElementById('reLocation').value || '',
+                    price: document.getElementById('rePrice').value || '',
+                    contactWhatsApp: document.getElementById('reContactWhatsApp').value || '',
+                    description: document.getElementById('reDescription').value || '',
+                    section: 'realestate',
+                    imageUrl: imageBase64 || '',
+                    userId: currentUser.uid,
+                    cost: cost,
+                    status: 'pending',
+                    approved: false,
+                    deducted: false,
+                    publishedBy: 'user',
+                    createdAt: new Date().toISOString()
                 });
             }).then(function() {
                 modal.remove();
-                return db.collection('users').doc(currentUser.uid).get();
-            }).then(function(snap) {
-                userData = snap.data();
-                document.getElementById('profileBalance').textContent = userData.balance || 0;
-                showToast('تم الإرسال للمراجعة', 'success');
+                showToast('تم الإرسال للمراجعة ✅ سيُخصم الرصيد بعد الموافقة', 'success');
             }).catch(function(e) {
                 showToast('خطأ: ' + e.message, 'error');
             });
