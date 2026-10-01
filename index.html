@@ -756,17 +756,18 @@
         var now = new Date().toISOString();
         
         return db.collection('ads')
-            .where('status', '==', 'approved')
-            .get()
-            .then(function(snapshot) {
-                var ads = [];
-                snapshot.forEach(function(doc) {
-                    var ad = doc.data();
-                    ad.id = doc.id;
-                    
-                    // تحقق من انتهاء المدة
-                    var expiresAt = ad.expiresAt;
-                    if (!expiresAt && ad.approvedAt && ad.durationDays) {
+    .get()
+    .then(function(snapshot) {
+        var ads = [];
+        snapshot.forEach(function(doc) {
+            var ad = doc.data();
+            ad.id = doc.id;
+            
+            // ✅ قبول status === 'approved' أو approved === true
+            if (!(ad.status === 'approved' || ad.approved === true)) return;
+            
+            // تحقق من انتهاء المدة
+            var expiresAt = ad.expiresAt;           if (!expiresAt && ad.approvedAt && ad.durationDays) {
                         var approval = new Date(ad.approvedAt);
                         approval.setDate(approval.getDate() + parseInt(ad.durationDays));
                         expiresAt = approval.toISOString();
