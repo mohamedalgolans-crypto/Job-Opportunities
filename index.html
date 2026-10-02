@@ -1037,18 +1037,17 @@
         
         // نحمّل الإعلانات + المنشورات معاً
         Promise.all([
-            loadAdsForSection(section),
-            (function() {
-                var q = db.collection(collectionName)
-                    .orderBy('createdAt', 'desc')
-                    .limit(CONFIG.postsPerPage);
+    loadAdsForSection(section),
+    (function() {
+        var q = db.collection(collectionName)
+            .limit(CONFIG.postsPerPage * 3);  // نجلب أكثر للفلترة
 
-                if (loadMore && state.lastDoc) {
-                    q = q.startAfter(state.lastDoc);
-                }
-                return q.get();
-            })()
-        ]).then(function(results) {
+        if (loadMore && state.lastDoc) {
+            q = q.startAfter(state.lastDoc);
+        }
+        return q.get();
+    })()
+]).then(function(results) {
             var ads = results[0];
             var snapshot = results[1];
             
