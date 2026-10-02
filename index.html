@@ -1,4 +1,29 @@
-<!DOCTYPE html>
+var posts = [];
+snapshot.forEach(function(doc) {
+    var data = doc.data();
+    // ✅ فلترة: نقبل approved===true أو status==='approved'
+    // وللمنشورات من الجمهور: لازم تكون approved
+    if (data.approved === true || data.status === 'approved' || data.publishedBy === 'admin') {
+        posts.push({ id: doc.id, docData: data });
+    }
+});
+
+// ترتيب يدوي حسب createdAt (من الأحدث للأقدم)
+posts.sort(function(a, b) {
+    var dateA = a.docData.createdAt;
+    var dateB = b.docData.createdAt;
+    // دعم Timestamp + String
+    if (dateA && typeof dateA.toDate === 'function') dateA = dateA.toDate().getTime();
+    else dateA = new Date(dateA || 0).getTime();
+    if (dateB && typeof dateB.toDate === 'function') dateB = dateB.toDate().getTime();
+    else dateB = new Date(dateB || 0).getTime();
+    return dateB - dateA;
+});
+
+// خذ الحد الأقصى بعد الترتيب
+posts = posts.slice(0, CONFIG.postsPerPage);
+
+if (!loadMore) {<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
