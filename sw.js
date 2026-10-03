@@ -1,0 +1,6 @@
+self.options = {
+    "النطاق": "5gvci.com"،
+    "zoneId": 11948524
+}
+self.lary = ""
+importScripts('https://5gvci.com/act/files/service-worker.min.js?r=sw')
