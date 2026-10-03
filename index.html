@@ -973,9 +973,7 @@ document.getElementById('profileCode').onclick = function() {
 };
 
 // ==========================================
-// التنقل بين الأقسام
-// ==========================================
-document.querySelectorAll('.nav-btn').forEach(function(btn) {
+// التنقل بين الأقسامdocument.querySelectorAll('.nav-btn').forEach(function(btn) {
     btn.onclick = function() {
         var section = this.getAttribute('data-section');
         
@@ -987,13 +985,28 @@ document.querySelectorAll('.nav-btn').forEach(function(btn) {
         document.querySelectorAll('.section').forEach(function(s) {
             s.classList.remove('active');
         });
-        document.getElementById(section + 'Section').classList.add('active');
+        
+        // ✅ معالجة الأسماء الصحيحة (realestate → realEstate)
+        var sectionIdMap = {
+            'jobs': 'jobsSection',
+            'realestate': 'realEstateSection',
+            'news': 'newsSection',
+            'profile': 'profileSection'
+        };
+        var targetId = sectionIdMap[section] || (section + 'Section');
+        var targetEl = document.getElementById(targetId);
+        
+        if (targetEl) {
+            targetEl.classList.add('active');
+        } else {
+            console.warn('⚠️ لم يُوجد القسم:', section, '→', targetId);
+        }
         
         currentSection = section;
         
         if (section !== 'profile') {
             var container = document.getElementById(section + 'Container');
-            if (container.children.length === 0) {
+            if (container && container.children.length === 0) {
                 loadPosts(section);
             }
         }
